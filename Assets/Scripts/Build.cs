@@ -8,6 +8,7 @@ public class Build : GameBehaviour
     public Sprite buildSprite;
     
     public PlayerActivator playerActivator;
+    public Transform spawnPos;
     
     // Start is called before the first frame update
     void Start()

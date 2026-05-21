@@ -10,4 +10,16 @@ public class Mill : Build
     {
         //Open Mill Menu
     }
+
+    public int HarvestCount()
+    {
+        int harvestActive = 0;
+        foreach (HarvestField h in harvestFields)
+        {
+            if (h.gameObject.activeInHierarchy == true)
+                harvestActive++;
+        }
+
+        return harvestActive;
+    }
 }

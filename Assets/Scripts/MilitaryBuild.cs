@@ -21,4 +21,10 @@ public class MilitaryBuild : Build
         //Open units menu
         //Open Upgrades menu
     }
+
+    public void SpawnUnit(Unit unit)
+    {
+        Vector3 spawnPoint = spawnPos == null ? playerActivator.transform.position : spawnPos.position;
+        Instantiate(unit, spawnPoint, Quaternion.identity, null);
+    }
 }

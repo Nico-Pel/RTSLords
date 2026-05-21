@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: Peasant
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: 6fa9d6f5589d74ebe93b8da37c6d67c1, type: 3}
   damageType: 0
   unitTypes: 00000000
   armorType: 0
+  goldPrice: 10
   health: 200
   speed: 1
   chargeSpeed: 1

@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class Hitbox : GameBehaviour
 {
+    public int teamID = 1;
     public enum DamageTypes
     {
         melee,

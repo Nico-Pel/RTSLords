@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: MilitaryBuild
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: 9c6ecdb420d794ee4bf8f1a0c49a9fb3, type: 3}
   damageType: 1
   unitTypes: 04000000
   armorType: 2
+  goldPrice: 25
   health: 1000
   speed: 0
   chargeSpeed: 0

@@ -14,4 +14,16 @@ public class City : Build
         //Open Mill menu
         //Open units menu (Peasant)
     }
+    
+    public int HarvestCount()
+    {
+        int harvestActive = 0;
+        foreach (HarvestField h in harvestFields)
+        {
+            if (h.gameObject.activeInHierarchy == true)
+                harvestActive++;
+        }
+
+        return harvestActive;
+    }
 }

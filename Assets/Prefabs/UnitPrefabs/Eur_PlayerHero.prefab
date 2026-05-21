@@ -48,6 +48,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b48df8101464c4637abf63468126fa31, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  possibleBuildsPrefabs:
+  - {fileID: 3772484311557747096, guid: 8e151248741564b89bb233f435932007, type: 3}
+  - {fileID: 9167603405611550851, guid: 6925eddb7417348c991a91110d64dede, type: 3}
+  - {fileID: 783247004054792209, guid: a338da03f9ecd47d1bb206a1ec35b4aa, type: 3}
+  - {fileID: 4109203478976838818, guid: da86af5a6dba042a0ba0b025a0987f67, type: 3}
 --- !u!114 &6998643810757285434
 MonoBehaviour:
   m_ObjectHideFlags: 0
