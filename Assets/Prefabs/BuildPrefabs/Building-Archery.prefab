@@ -79,7 +79,7 @@ MonoBehaviour:
   buildZone: {fileID: 0}
   buildType: 1
   unitPrefabs:
-  - {fileID: 1765660831775459141, guid: cb4666b21fccd4545bad67a3225b8dc6, type: 3}
+  - {fileID: 1765660831775459141, guid: 4e4bcd44a4adb45b6b6ae6bcfa84dddd, type: 3}
 --- !u!114 &-2158394796690188957
 MonoBehaviour:
   m_ObjectHideFlags: 0

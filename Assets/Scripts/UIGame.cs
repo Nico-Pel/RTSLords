@@ -66,6 +66,16 @@ public class UIGame : GameBehaviour
         }
     }
 
+    private void Update()
+    {
+#if UNITY_EDITOR
+        if (_playerTeam != null && Input.GetKeyDown(KeyCode.Y))
+        {
+            _playerTeam.AddGold(10);
+        }
+#endif
+    }
+
     public void OpenMenuUnits(MilitaryBuild militaryBuild)
     {
         _currentMenuOwner = militaryBuild;

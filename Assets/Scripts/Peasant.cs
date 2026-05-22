@@ -4,11 +4,22 @@ using UnityEngine;
 
 public class Peasant : Unit
 {
+    [Header("Peasant Animation")]
+    public string lumberBoolName = "Lumber";
+    public string harvestBoolName = "Harvest";
+    public string woodBoolName = "Wood";
+    public string woodDropTriggerName = "WoodDrop";
+    public float woodDropDuration = 1f;
+    public float lumberImpactFallbackDelay = 0.18f;
+
     private HarvestField _assignedField;
     private Tree _assignedTree;
     private float _workTimer;
     private int _currentWoodHits;
     private bool _returningToCity;
+    private bool _isDroppingWood;
+    private bool _waitingForWoodImpact;
+    private int _pendingWoodImpactVersion;
 
     public void InitializeWork()
     {
@@ -16,6 +27,8 @@ public class Peasant : Unit
         _returningToCity = false;
         _assignedTree = null;
         _currentWoodHits = 0;
+        _isDroppingWood = false;
+        _waitingForWoodImpact = false;
         ClearMovementPath();
         RefreshHarvestAssignment();
     }
@@ -26,6 +39,8 @@ public class Peasant : Unit
         _returningToCity = false;
         _assignedTree = null;
         _currentWoodHits = 0;
+        _isDroppingWood = false;
+        _waitingForWoodImpact = false;
         ClearMovementPath();
 
         if (_assignedField != null && _assignedField != preferredField)
@@ -76,6 +91,8 @@ public class Peasant : Unit
                 _returningToCity = false;
                 _assignedTree = null;
                 _currentWoodHits = 0;
+                _isDroppingWood = false;
+                _waitingForWoodImpact = false;
             }
         }
     }
@@ -108,6 +125,11 @@ public class Peasant : Unit
             return Vector3.zero;
         }
 
+        if (_isDroppingWood)
+        {
+            return Vector3.zero;
+        }
+
         if (_returningToCity)
         {
             Vector3 deliveryPoint = GetCityDeliveryPoint();
@@ -117,27 +139,8 @@ public class Peasant : Unit
                 return GetDirectionTo(deliveryPoint, 2f);
             }
 
-            Team.AddGold(1);
-            _returningToCity = false;
-            _currentWoodHits = 0;
-            _assignedTree = null;
-            _workTimer = 0f;
-            ClearMovementPath();
-            RefreshHarvestAssignment();
-
-            if (_assignedField != null)
-            {
-                return HandleFieldHarvest();
-            }
-
-            if (_assignedTree == null || _assignedTree.IsDepleted)
-            {
-                _assignedTree = Team.FindClosestTree(Team.BasePosition);
-            }
-
-            return _assignedTree != null
-                ? GetDirectionTo(_assignedTree.transform.position, 1.75f)
-                : Vector3.zero;
+            BeginWoodDrop();
+            return Vector3.zero;
         }
 
         if (_assignedTree == null || _assignedTree.IsDepleted)
@@ -152,25 +155,65 @@ public class Peasant : Unit
         Vector3 deltaToTree = GetFlatDelta(_assignedTree.transform.position);
         if (deltaToTree.magnitude > 1.75f)
         {
+            _waitingForWoodImpact = false;
             return GetDirectionTo(_assignedTree.transform.position, 1.75f);
         }
 
         _workTimer -= Time.deltaTime;
-        if (_workTimer <= 0f)
+        if (_workTimer <= 0f && !_waitingForWoodImpact)
         {
             _workTimer = Mathf.Max(0.25f, Stats.woodHitInterval);
-            if (_assignedTree.HarvestOneWood())
-            {
-                _currentWoodHits++;
-            }
-
-            if (_currentWoodHits >= Mathf.Max(1, Stats.woodHitsPerDelivery) || _assignedTree.IsDepleted)
-            {
-                _returningToCity = true;
-            }
+            _waitingForWoodImpact = true;
+            _pendingWoodImpactVersion++;
+            StartCoroutine(ResolveWoodImpactAfterDelay(_pendingWoodImpactVersion));
         }
 
         return Vector3.zero;
+    }
+
+    public override void AnimationHarvestImpact()
+    {
+        if (!_waitingForWoodImpact)
+        {
+            return;
+        }
+
+        ResolveWoodImpact();
+    }
+
+    protected override void UpdateAnimators(Vector3 moveDirection)
+    {
+        base.UpdateAnimators(moveDirection);
+
+        if (moveAnimator == null)
+        {
+            return;
+        }
+
+        bool isMoving = moveDirection.sqrMagnitude > 0.0001f;
+        bool isHarvestingField = _assignedField != null && !isMoving;
+        bool isLumbering = _assignedField == null && _assignedTree != null && !_returningToCity && !isMoving;
+        bool isCarryingWood = _returningToCity || _isDroppingWood;
+
+        if (!string.IsNullOrWhiteSpace(moveBoolName))
+        {
+            TrySetAnimatorBool(moveAnimator, moveBoolName, isMoving);
+        }
+
+        if (!string.IsNullOrWhiteSpace(harvestBoolName))
+        {
+            TrySetAnimatorBool(moveAnimator, harvestBoolName, isHarvestingField);
+        }
+
+        if (!string.IsNullOrWhiteSpace(lumberBoolName))
+        {
+            TrySetAnimatorBool(moveAnimator, lumberBoolName, isLumbering);
+        }
+
+        if (!string.IsNullOrWhiteSpace(woodBoolName))
+        {
+            TrySetAnimatorBool(moveAnimator, woodBoolName, isCarryingWood);
+        }
     }
 
     private Vector3 GetCityDeliveryPoint()
@@ -186,5 +229,78 @@ public class Peasant : Unit
         }
 
         return Team.city.transform.position;
+    }
+
+    private IEnumerator ResolveWoodImpactAfterDelay(int impactVersion)
+    {
+        yield return new WaitForSeconds(Mathf.Max(0.01f, lumberImpactFallbackDelay));
+
+        if (!_waitingForWoodImpact || impactVersion != _pendingWoodImpactVersion)
+        {
+            yield break;
+        }
+
+        ResolveWoodImpact();
+    }
+
+    private void ResolveWoodImpact()
+    {
+        _waitingForWoodImpact = false;
+
+        if (_assignedTree == null)
+        {
+            return;
+        }
+
+        if (_assignedTree.HarvestOneWood())
+        {
+            _currentWoodHits++;
+            _assignedTree.PlayHitShake();
+        }
+
+        if (_currentWoodHits >= Mathf.Max(1, Stats.woodHitsPerDelivery) || _assignedTree.IsDepleted)
+        {
+            _returningToCity = true;
+        }
+    }
+
+    private void BeginWoodDrop()
+    {
+        _isDroppingWood = true;
+        _returningToCity = false;
+        _waitingForWoodImpact = false;
+        _assignedTree = null;
+        _workTimer = 0f;
+        ClearMovementPath();
+
+        if (moveAnimator != null &&
+            !string.IsNullOrWhiteSpace(woodDropTriggerName) &&
+            HasAnimatorParameter(moveAnimator, woodDropTriggerName, AnimatorControllerParameterType.Trigger))
+        {
+            moveAnimator.ResetTrigger(woodDropTriggerName);
+            moveAnimator.SetTrigger(woodDropTriggerName);
+        }
+
+        _currentWoodHits = 0;
+        Team.AddGold(1);
+        StartCoroutine(FinishWoodDropAfterDelay());
+    }
+
+    private IEnumerator FinishWoodDropAfterDelay()
+    {
+        yield return new WaitForSeconds(Mathf.Max(0.01f, woodDropDuration));
+
+        _isDroppingWood = false;
+        RefreshHarvestAssignment();
+
+        if (_assignedField != null)
+        {
+            yield break;
+        }
+
+        if (_assignedTree == null || _assignedTree.IsDepleted)
+        {
+            _assignedTree = Team != null ? Team.FindClosestTree(Team.BasePosition) : null;
+        }
     }
 }

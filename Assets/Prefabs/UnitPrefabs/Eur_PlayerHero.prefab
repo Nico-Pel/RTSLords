@@ -274,8 +274,11 @@ MonoBehaviour:
   isHero: 0
   moveAnimator: {fileID: 18915988458445454}
   attackAnimator: {fileID: 4471194981152752225}
+  projectileSpawnPos: {fileID: 4685527753521572421}
   moveBoolName: Move
   attackTriggerName: Attack
+  useAnimationEventForAttackImpact: 1
+  attackImpactFallbackDelay: 0.2
   attackStopDuration: 1.5
   _currentUnitState: 0
 --- !u!114 &1512452913845963754

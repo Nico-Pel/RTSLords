@@ -18,4 +18,14 @@ public class UnitAnimationRelay : MonoBehaviour
     {
         owner?.AnimationAttackImpact();
     }
+
+    public void HarvestImpact()
+    {
+        owner?.AnimationHarvestImpact();
+    }
+
+    public void OnHarvestImpact()
+    {
+        owner?.AnimationHarvestImpact();
+    }
 }

@@ -21,6 +21,7 @@ public class Unit : GameBehaviour
     [Header("Animation")]
     public Animator moveAnimator;
     public Animator attackAnimator;
+    public Transform projectileSpawnPos;
     public string moveBoolName = "Move";
     public string attackTriggerName = "Attack";
     public bool useAnimationEventForAttackImpact = true;
@@ -274,6 +275,10 @@ public class Unit : GameBehaviour
         ResolvePendingAttackImpact();
     }
 
+    public virtual void AnimationHarvestImpact()
+    {
+    }
+
     private void QueuePendingAttackImpact(Hitbox target)
     {
         _pendingAttackTarget = target;
@@ -441,6 +446,11 @@ public class Unit : GameBehaviour
 
     protected virtual Vector3 GetProjectileSpawnPosition()
     {
+        if (projectileSpawnPos != null)
+        {
+            return projectileSpawnPos.position;
+        }
+
         return transform.position + transform.forward * 0.9f + Vector3.up * 1.15f;
     }
 
@@ -602,7 +612,7 @@ public class Unit : GameBehaviour
         return null;
     }
 
-    private void UpdateAnimators(Vector3 moveDirection)
+    protected virtual void UpdateAnimators(Vector3 moveDirection)
     {
         bool isMoving = moveDirection.sqrMagnitude > 0.0001f;
 
@@ -623,7 +633,7 @@ public class Unit : GameBehaviour
         TrySetAnimatorTrigger(attackAnimator, attackTriggerName);
     }
 
-    private void TrySetAnimatorBool(Animator animator, string parameterName, bool value)
+    protected void TrySetAnimatorBool(Animator animator, string parameterName, bool value)
     {
         if (!HasAnimatorParameter(animator, parameterName, AnimatorControllerParameterType.Bool))
         {
@@ -653,7 +663,7 @@ public class Unit : GameBehaviour
         animator.ResetTrigger(parameterName);
     }
 
-    private bool HasAnimatorParameter(Animator animator, string parameterName, AnimatorControllerParameterType parameterType)
+    protected bool HasAnimatorParameter(Animator animator, string parameterName, AnimatorControllerParameterType parameterType)
     {
         if (animator == null || string.IsNullOrWhiteSpace(parameterName))
         {
