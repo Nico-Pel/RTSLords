@@ -2,17 +2,23 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(Unit))]
 public class AIController : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
+    public TeamManager explicitTeam;
+
+    private Unit _unit;
+
+    private void Awake()
     {
-        
+        _unit = GetComponent<Unit>();
     }
 
-    // Update is called once per frame
-    void Update()
+    private void Start()
     {
-        
+        if (explicitTeam != null && _unit != null)
+        {
+            explicitTeam.RegisterUnit(_unit);
+        }
     }
 }

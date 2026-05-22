@@ -12,12 +12,30 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: Soldier
   m_EditorClassIdentifier: 
+  sprite: {fileID: 0}
+  description: 
   damageType: 0
   unitTypes: 00000000
   armorType: 0
   goldPrice: 12
   health: 100
-  speed: 1
-  chargeSpeed: 1.5
+  speed: 2.5
+  chargeSpeed: 2.75
   armor: 0
   distanceArmor: 0
+  range: 1
+  damages: 3
+  attackCooldown: 1.1
+  attackMoveStopDistance: 0.9
+  aggroRange: 8
+  detectionRaidRange: 15
+  detectionDefenseRange: 25
+  useProjectile: 0
+  projectilePrefab: {fileID: 0}
+  projectileSpeed: 10
+  followDistance: 2.25
+  defendAnchorDistance: 5
+  separationDistance: 1.25
+  harvestInterval: 5
+  woodHitInterval: 1
+  woodHitsPerDelivery: 5

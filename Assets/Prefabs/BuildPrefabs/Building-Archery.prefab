@@ -32,6 +32,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 6753455046202223924}
   - {fileID: 6477765049731597915}
   - {fileID: 5903126443653976075}
   m_Father: {fileID: 0}
@@ -72,8 +73,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   buildName: Archery
-  buildSprite: {fileID: 21300000, guid: 9c6ecdb420d794ee4bf8f1a0c49a9fb3, type: 3}
+  buildSprite: {fileID: 21300000, guid: 6c4bdaab6e2be4feb9fb73b093f3b6b1, type: 3}
   playerActivator: {fileID: 8763426986918588405}
+  spawnPos: {fileID: 6753455046202223924}
+  buildZone: {fileID: 0}
   buildType: 1
   unitPrefabs:
   - {fileID: 1765660831775459141, guid: cb4666b21fccd4545bad67a3225b8dc6, type: 3}
@@ -89,7 +92,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a639f1166a386460bb3a11586919b1b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  teamID: 1
   unitStats: {fileID: 11400000, guid: 068f143c3b69c468d9bf4edfe37c6509, type: 2}
+  destroyOnDeath: 1
+  _currentHp: 0
 --- !u!1 &4187461223326086984
 GameObject:
   m_ObjectHideFlags: 0
@@ -173,6 +179,37 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &5088420788576324215
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6753455046202223924}
+  m_Layer: 0
+  m_Name: SpawnPos
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6753455046202223924
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5088420788576324215}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.79, y: 0, z: 1.87}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3761162972605590074}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2131662246957526536
 PrefabInstance:
   m_ObjectHideFlags: 0

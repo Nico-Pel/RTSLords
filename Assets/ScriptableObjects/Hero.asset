@@ -13,11 +13,29 @@ MonoBehaviour:
   m_Name: Hero
   m_EditorClassIdentifier: 
   sprite: {fileID: 21300000, guid: e7ee67c9963ec47bd8cbbc5c14ea90af, type: 3}
+  description: 
   damageType: 1
   unitTypes: 0100000003000000
   armorType: 0
+  goldPrice: 5
   health: 500
   speed: 3
   chargeSpeed: 3
   armor: 0
   distanceArmor: 0
+  range: 10
+  damages: 3
+  attackCooldown: 1.1
+  attackMoveStopDistance: 0.9
+  aggroRange: 8
+  detectionRaidRange: 15
+  detectionDefenseRange: 25
+  useProjectile: 1
+  projectilePrefab: {fileID: 8827369341842755080, guid: 32f7da4486a4d4e5e97c262a9a6161e6, type: 3}
+  projectileSpeed: 10
+  followDistance: 2.25
+  defendAnchorDistance: 5
+  separationDistance: 1.25
+  harvestInterval: 5
+  woodHitInterval: 1
+  woodHitsPerDelivery: 5

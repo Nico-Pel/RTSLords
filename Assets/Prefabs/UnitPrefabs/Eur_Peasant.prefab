@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 1543439110303320727}
   - component: {fileID: 9033559952306559815}
   - component: {fileID: 6982257096884755695}
+  - component: {fileID: 7578554808232074932}
   m_Layer: 0
   m_Name: Eur_Peasant
   m_TagString: Untagged
@@ -47,6 +48,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 723e3342bfdf04fc3bd878cd4d1daaa8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  explicitTeam: {fileID: 0}
 --- !u!114 &9033559952306559815
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -61,6 +63,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   unitName: Peasant
   unitSprite: {fileID: 21300000, guid: 6fa9d6f5589d74ebe93b8da37c6d67c1, type: 3}
+  isHero: 0
+  _currentUnitState: 0
 --- !u!114 &6982257096884755695
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -73,7 +77,33 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a639f1166a386460bb3a11586919b1b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  teamID: 1
   unitStats: {fileID: 11400000, guid: 2266f30fec1054da9ba589ef9133197c, type: 2}
+  destroyOnDeath: 1
+  _currentHp: 0
+--- !u!136 &7578554808232074932
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6883781588092503653}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.25
+  m_Height: 1
+  m_Direction: 1
+  m_Center: {x: 0, y: 0.5, z: 0}
 --- !u!1001 &8709022547289970709
 PrefabInstance:
   m_ObjectHideFlags: 0

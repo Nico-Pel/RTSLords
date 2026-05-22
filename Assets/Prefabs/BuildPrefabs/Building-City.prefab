@@ -238,6 +238,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 7871667987397730859}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &6352712570657780898
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5222394666140990466}
+  m_Layer: 0
+  m_Name: SpawnPos
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5222394666140990466
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6352712570657780898}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.12, y: 0, z: 3}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1812615033024781718}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6372370386618257413
 GameObject:
   m_ObjectHideFlags: 0
@@ -279,6 +310,7 @@ Transform:
   - {fileID: 1830393582670613998}
   - {fileID: 1198764301091672193}
   - {fileID: 8056446203580181814}
+  - {fileID: 5222394666140990466}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!136 &8403617768506460920
@@ -319,6 +351,9 @@ MonoBehaviour:
   buildName: City
   buildSprite: {fileID: 21300000, guid: 9c6ecdb420d794ee4bf8f1a0c49a9fb3, type: 3}
   playerActivator: {fileID: 429537290531409431}
+  spawnPos: {fileID: 5222394666140990466}
+  buildZone: {fileID: 0}
+  harvestFieldActiveOnStart: 2
   peasantPrefab: {fileID: 9033559952306559815, guid: feb51986267aa4a76bb3e77f290dabcd, type: 3}
   harvestFields:
   - {fileID: 1378528419350534597}
@@ -340,7 +375,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a639f1166a386460bb3a11586919b1b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  teamID: 1
   unitStats: {fileID: 11400000, guid: 8107ceb7d5af44897a9e92f13d0fffba, type: 2}
+  destroyOnDeath: 1
+  _currentHp: 0
 --- !u!1 &7018099240293839154
 GameObject:
   m_ObjectHideFlags: 0
@@ -492,7 +530,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 6742837774927112749}
   radius: 1.5
 --- !u!1001 &1690965089332383081
 PrefabInstance:
@@ -583,7 +621,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 4593704591892223211}
   radius: 1.5
 --- !u!1001 &2228266135248300549
 PrefabInstance:
@@ -669,7 +707,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 8019066599112565787}
   radius: 1.5
 --- !u!4 &1830393582670613998 stripped
 Transform:
@@ -760,7 +798,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 1521922784454954161}
   radius: 1.5
 --- !u!4 &5474830777152914762 stripped
 Transform:
@@ -924,7 +962,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 441834860145620685}
   radius: 1.5
 --- !u!4 &8056446203580181814 stripped
 Transform:
@@ -1015,7 +1053,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 8989377317815692993}
   radius: 1.5
 --- !u!4 &7871667987397730859 stripped
 Transform:
@@ -1111,5 +1149,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f36bce1bad404238b820f02eea82953, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wayPoint: {fileID: 0}
+  wayPoint: {fileID: 753032861727948254}
   radius: 1.5

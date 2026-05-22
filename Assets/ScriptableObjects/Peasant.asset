@@ -12,6 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: Peasant
   m_EditorClassIdentifier: 
+  sprite: {fileID: 21300000, guid: 6fa9d6f5589d74ebe93b8da37c6d67c1, type: 3}
+  description: 
   damageType: 0
   unitTypes: 00000000
   armorType: 0
@@ -21,3 +23,19 @@ MonoBehaviour:
   chargeSpeed: 1
   armor: 0
   distanceArmor: 0
+  range: 1
+  damages: 3
+  attackCooldown: 1.1
+  attackMoveStopDistance: 0.9
+  aggroRange: 8
+  detectionRaidRange: 15
+  detectionDefenseRange: 25
+  useProjectile: 0
+  projectilePrefab: {fileID: 0}
+  projectileSpeed: 10
+  followDistance: 2.25
+  defendAnchorDistance: 5
+  separationDistance: 1.25
+  harvestInterval: 5
+  woodHitInterval: 1
+  woodHitsPerDelivery: 5

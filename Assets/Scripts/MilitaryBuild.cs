@@ -13,18 +13,47 @@ public class MilitaryBuild : Build
     }
     
     public MilitaryBuildType buildType;
-
+    
     public Unit[] unitPrefabs;
 
     public override void OpenBuildMenu()
     {
-        //Open units menu
-        //Open Upgrades menu
+        if (playerActivator == null || playerActivator.LastTriggeringTeam != Team)
+        {
+            return;
+        }
+
+        UIGame.Instance?.OpenMenuUnits(this);
     }
 
-    public void SpawnUnit(Unit unit)
+    public bool TrySpawnUnit(int unitIndex)
     {
-        Vector3 spawnPoint = spawnPos == null ? playerActivator.transform.position : spawnPos.position;
-        Instantiate(unit, spawnPoint, Quaternion.identity, null);
+        if (unitPrefabs == null || unitIndex < 0 || unitIndex >= unitPrefabs.Length)
+        {
+            return false;
+        }
+
+        Unit unit = unitPrefabs[unitIndex];
+        if (unit == null || Team == null)
+        {
+            return false;
+        }
+
+        Hitbox unitHitbox = unit.GetComponent<Hitbox>();
+        if (unitHitbox == null || unitHitbox.unitStats == null)
+        {
+            return false;
+        }
+
+        if (!Team.SpendGold(unitHitbox.unitStats.goldPrice))
+        {
+            return false;
+        }
+
+        Vector3 spawnPoint = spawnPos == null ? transform.position + transform.forward * 2f : spawnPos.position;
+        Unit spawnedUnit = Instantiate(unit, spawnPoint, Quaternion.Euler(0f, Team.BuildFacingY, 0f), Team.UnitsRoot);
+        spawnedUnit.SetState(Team.ResolveInheritedState(spawnedUnit));
+        Team.RegisterUnit(spawnedUnit);
+        return true;
     }
 }
