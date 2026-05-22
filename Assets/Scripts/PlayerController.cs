@@ -12,12 +12,14 @@ public class PlayerController : MonoBehaviour
 
     [Header("Camera")]
     public float cameraFollowLerp = 10f;
+    public float cameraReturnToCityLerp = 5f;
 
     private Camera _mainCamera;
     private Vector3 _cameraOffset;
     private Quaternion _cameraRotation;
     private Vector2 _dragStartPosition;
     private bool _isDragging;
+    private bool _isControlLocked;
 
     public TeamManager Team { get; private set; }
     public Unit ControlledUnit { get; private set; }
@@ -29,11 +31,24 @@ public class PlayerController : MonoBehaviour
         if (ControlledUnit != null)
         {
             ControlledUnit.isHero = true;
+            ControlledUnit.OnUnitDied += HandleControlledUnitDeath;
+            ControlledUnit.OnUnitRespawned += HandleControlledUnitRespawned;
+            ConfigureHeroPersistence();
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (ControlledUnit != null)
+        {
+            ControlledUnit.OnUnitDied -= HandleControlledUnitDeath;
+            ControlledUnit.OnUnitRespawned -= HandleControlledUnitRespawned;
         }
     }
 
     private void Start()
     {
+        ConfigureHeroPersistence();
         _mainCamera = Camera.main;
         if (_mainCamera != null && ControlledUnit != null)
         {
@@ -58,20 +73,57 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        if (_isControlLocked || ControlledUnit.IsDead)
+        {
+            ControlledUnit.SetControllerMoveInput(Vector3.zero);
+            return;
+        }
+
         Vector3 moveInput = ReadMovementInput();
         ControlledUnit.SetControllerMoveInput(moveInput);
     }
 
     private void LateUpdate()
     {
-        if (_mainCamera == null || ControlledUnit == null)
+        if (_mainCamera == null)
         {
             return;
         }
 
-        Vector3 desiredPosition = ControlledUnit.transform.position + _cameraOffset;
-        _mainCamera.transform.position = Vector3.Lerp(_mainCamera.transform.position, desiredPosition, Time.deltaTime * cameraFollowLerp);
+        Vector3 desiredPosition = _mainCamera.transform.position;
+        float lerpSpeed = cameraFollowLerp;
+        if (_isControlLocked && Team != null && Team.city != null)
+        {
+            desiredPosition = Team.city.transform.position + _cameraOffset;
+            lerpSpeed = cameraReturnToCityLerp;
+        }
+        else if (ControlledUnit != null)
+        {
+            desiredPosition = ControlledUnit.transform.position + _cameraOffset;
+        }
+
+        _mainCamera.transform.position = Vector3.Lerp(_mainCamera.transform.position, desiredPosition, Time.deltaTime * lerpSpeed);
         _mainCamera.transform.rotation = Quaternion.Lerp(_mainCamera.transform.rotation, _cameraRotation, Time.deltaTime * cameraFollowLerp);
+    }
+
+    private void HandleControlledUnitDeath(Unit unit)
+    {
+        _isControlLocked = true;
+        _isDragging = false;
+    }
+
+    private void HandleControlledUnitRespawned(Unit unit)
+    {
+        _isControlLocked = false;
+        _isDragging = false;
+    }
+
+    private void ConfigureHeroPersistence()
+    {
+        if (ControlledUnit != null && ControlledUnit.Hitbox != null)
+        {
+            ControlledUnit.Hitbox.destroyOnDeath = false;
+        }
     }
 
     private Vector3 ReadMovementInput()

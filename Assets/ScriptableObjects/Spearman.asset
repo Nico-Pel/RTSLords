@@ -12,24 +12,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: Spearman
   m_EditorClassIdentifier: 
-  sprite: {fileID: 0}
-  description: 
+  sprite: {fileID: 21300000, guid: 1797492e014dc4438aa75396c95297de, type: 3}
+  description: Spearmen are weaker than Soldiers but have a longer attack range and
+    deal bonus damage against cavalry.
   damageType: 0
-  unitTypes: 00000000
+  unitTypes: 0000000002000000
   armorType: 0
-  goldPrice: 12
-  health: 100
+  goldPrice: 10
+  health: 80
   speed: 2.5
   chargeSpeed: 2.75
   armor: 0
   distanceArmor: 0
   range: 1.5
   damages: 2
-  attackCooldown: 1.1
+  attackCooldown: 1.5
   attackMoveStopDistance: 0.9
   aggroRange: 8
   detectionRaidRange: 15
   detectionDefenseRange: 25
+  creationTime: 8
+  outgoingDamageModifiers:
+  - targetType: 1
+    damageType: 0
+    unitType: 3
+    multiplier: 1.5
+  incomingDamageModifiers: []
   useProjectile: 0
   projectilePrefab: {fileID: 0}
   projectileSpeed: 10

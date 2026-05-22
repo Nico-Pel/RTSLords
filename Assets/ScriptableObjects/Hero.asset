@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
   m_Name: Hero
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: e7ee67c9963ec47bd8cbbc5c14ea90af, type: 3}
+  sprite: {fileID: 21300000, guid: 674671f17ed144d85ac01c04307d1147, type: 3}
   description: 
   damageType: 1
   unitTypes: 0100000003000000
@@ -30,6 +30,9 @@ MonoBehaviour:
   aggroRange: 8
   detectionRaidRange: 15
   detectionDefenseRange: 25
+  creationTime: 10
+  outgoingDamageModifiers: []
+  incomingDamageModifiers: []
   useProjectile: 1
   projectilePrefab: {fileID: 8827369341842755080, guid: 32f7da4486a4d4e5e97c262a9a6161e6, type: 3}
   projectileSpeed: 10

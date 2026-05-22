@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
+  m_Name: Knight
+  m_EditorClassIdentifier: 
+  sprite: {fileID: 21300000, guid: 0b2d8a4b3b4ce4466bba4f980f87ea13, type: 3}
+  description: The knight is a powerful horseman who is resistant to arrows and deals
+    heavy damage.
+  damageType: 0
+  unitTypes: 03000000
+  armorType: 0
+  goldPrice: 30
+  health: 220
+  speed: 2.8
+  chargeSpeed: 3.2
+  armor: 0
+  distanceArmor: 0
+  range: 1.65
+  damages: 7
+  attackCooldown: 1.5
+  attackMoveStopDistance: 0.9
+  aggroRange: 8
+  detectionRaidRange: 15
+  detectionDefenseRange: 25
+  creationTime: 15
+  outgoingDamageModifiers: []
+  incomingDamageModifiers:
+  - targetType: 0
+    damageType: 1
+    unitType: 1
+    multiplier: 0.5
+  useProjectile: 0
+  projectilePrefab: {fileID: 0}
+  projectileSpeed: 10
+  followDistance: 2.25
+  defendAnchorDistance: 5
+  separationDistance: 1.25
+  harvestInterval: 5
+  woodHitInterval: 1
+  woodHitsPerDelivery: 5

@@ -22,7 +22,13 @@ public class AIHeroController : MonoBehaviour
         if (ControlledUnit != null)
         {
             ControlledUnit.isHero = true;
+            ConfigureHeroPersistence();
         }
+    }
+
+    private void Start()
+    {
+        ConfigureHeroPersistence();
     }
 
     public void BindTeam(TeamManager team)
@@ -101,6 +107,14 @@ public class AIHeroController : MonoBehaviour
             }
 
             militaryBuild.TrySpawnUnit(0);
+        }
+    }
+
+    private void ConfigureHeroPersistence()
+    {
+        if (ControlledUnit != null && ControlledUnit.Hitbox != null)
+        {
+            ControlledUnit.Hitbox.destroyOnDeath = false;
         }
     }
 }

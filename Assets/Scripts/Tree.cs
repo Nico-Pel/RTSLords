@@ -12,6 +12,7 @@ public class Tree : MonoBehaviour
 
     private Coroutine _shakeRoutine;
     private Quaternion _baseRotation;
+    private bool _pendingDeactivate;
 
     private void Awake()
     {
@@ -34,6 +35,12 @@ public class Tree : MonoBehaviour
         if (!gameObject.activeInHierarchy)
         {
             return;
+        }
+
+        if (IsDepleted)
+        {
+            DisableBlockingColliders();
+            _pendingDeactivate = true;
         }
 
         if (_shakeRoutine != null)
@@ -75,5 +82,23 @@ public class Tree : MonoBehaviour
 
         transform.localRotation = _baseRotation;
         _shakeRoutine = null;
+
+        if (_pendingDeactivate)
+        {
+            _pendingDeactivate = false;
+            gameObject.SetActive(false);
+        }
+    }
+
+    private void DisableBlockingColliders()
+    {
+        Collider[] colliders = GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i] != null)
+            {
+                colliders[i].enabled = false;
+            }
+        }
     }
 }

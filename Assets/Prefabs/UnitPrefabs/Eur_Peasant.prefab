@@ -241,6 +241,9 @@ MonoBehaviour:
   _currentUnitState: 0
   lumberBoolName: Lumber
   harvestBoolName: Harvest
+  woodBoolName: Wood
+  woodDropTriggerName: WoodDrop
+  woodDropDuration: 1
   lumberImpactFallbackDelay: 0.18
 --- !u!114 &6982257096884755695
 MonoBehaviour:

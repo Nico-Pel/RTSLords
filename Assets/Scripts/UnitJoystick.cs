@@ -11,7 +11,7 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
 
     private RectTransform _rootRectTransform;
     private TeamManager _team;
-    private Unit.UnitType _unitType;
+    private UnitStats _unitStats;
     private Unit.UnitState _currentState;
     private Vector2 _restPosition;
 
@@ -42,10 +42,10 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         }
     }
 
-    public void Setup(TeamManager team, Unit.UnitType unitType, Sprite sprite, Unit.UnitState state)
+    public void Setup(TeamManager team, UnitStats unitStats, Sprite sprite, Unit.UnitState state)
     {
         _team = team;
-        _unitType = unitType;
+        _unitStats = unitStats;
         _currentState = state;
 
         if (unitImage != null)
@@ -112,7 +112,7 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         if (nextState != _currentState)
         {
             _currentState = nextState;
-            _team.SetStateForType(_unitType, nextState);
+            _team.SetStateForStats(_unitStats, nextState);
         }
 
         ResetHandle();

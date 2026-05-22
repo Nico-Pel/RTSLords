@@ -8,6 +8,11 @@ using System.Linq;
 
 public class UIGame : GameBehaviour
 {
+    private static readonly Color DisabledPriceColor = new Color(0.75f, 0.75f, 0.75f, 1f);
+    private static readonly Color InsufficientGoldPriceColor = new Color(1f, 0.35f, 0.35f, 1f);
+    private static readonly Color NormalImageColor = Color.white;
+    private static readonly Color DisabledImageColor = new Color(0.45f, 0.45f, 0.45f, 1f);
+
     public static UIGame Instance;
 
     [Header("Menus")]
@@ -35,7 +40,8 @@ public class UIGame : GameBehaviour
     private Mill _currentMill;
     private TeamManager _playerTeam;
     private UnityEngine.Object _currentMenuOwner;
-    private readonly Dictionary<Unit.UnitType, UnitJoystick> _joystickByType = new Dictionary<Unit.UnitType, UnitJoystick>();
+    private readonly Dictionary<UnitStats, UnitJoystick> _joystickByType = new Dictionary<UnitStats, UnitJoystick>();
+    private readonly Dictionary<TextMeshProUGUI, Color> _defaultButtonPriceColors = new Dictionary<TextMeshProUGUI, Color>();
 
     protected void Awake()
     {
@@ -94,19 +100,28 @@ public class UIGame : GameBehaviour
             int capturedIndex = i;
             button.gameObject.SetActive(militaryBuild != null && militaryBuild.unitPrefabs != null && capturedIndex < militaryBuild.unitPrefabs.Length);
             button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(() => _currentMilitaryBuild?.TrySpawnUnit(capturedIndex));
+            button.onClick.AddListener(() =>
+            {
+                _currentMilitaryBuild?.TrySpawnUnit(capturedIndex);
+                RefreshOpenMenuState();
+            });
 
             if (militaryBuild != null && militaryBuild.unitPrefabs != null && capturedIndex < militaryBuild.unitPrefabs.Length)
             {
                 Unit unitPrefab = militaryBuild.unitPrefabs[capturedIndex];
-                SetButtonPrice(button, GetUnitGoldPrice(unitPrefab));
+                ProductionQueueBlockReason blockReason = militaryBuild.GetUnitQueueBlockReason(capturedIndex);
+                SetButtonPrice(button, GetUnitGoldPrice(unitPrefab), blockReason == ProductionQueueBlockReason.InsufficientGold ? InsufficientGoldPriceColor : (blockReason == ProductionQueueBlockReason.None ? GetDefaultButtonPriceColor(button) : DisabledPriceColor));
                 SetButtonSprite(button, "iUnit", GetUnitSprite(unitPrefab));
-                button.interactable = CanCreateUnitType(unitPrefab);
+                bool canCreate = blockReason == ProductionQueueBlockReason.None;
+                button.interactable = canCreate;
+                SetButtonUnitVisualState(button, canCreate);
             }
             else
             {
+                SetButtonPrice(button, 0, DisabledPriceColor);
                 SetButtonSprite(button, "iUnit", null);
                 button.interactable = false;
+                SetButtonUnitVisualState(button, false);
             }
         }
     }
@@ -139,7 +154,7 @@ public class UIGame : GameBehaviour
             if (isAvailable)
             {
                 Build buildPrefab = buildsToSetup[i];
-                SetButtonPrice(button, buildPrefab.GoldPrice);
+                SetButtonPrice(button, buildPrefab.GoldPrice, GetDefaultButtonPriceColor(button));
                 SetButtonSprite(button, "iBuild", buildPrefab.buildSprite);
                 button.onClick.AddListener(() =>
                 {
@@ -184,8 +199,12 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8);
-            bAddMill.onClick.AddListener(() => _currentMill?.TryUnlockHarvestField());
+            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
+            bAddMill.onClick.AddListener(() =>
+            {
+                _currentMill?.TryUnlockHarvestField();
+                RefreshOpenMenuState();
+            });
         }
     }
 
@@ -205,7 +224,7 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8);
+            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
             bAddMill.onClick.AddListener(() => _currentCity?.TryUnlockHarvestField());
         }
     }
@@ -236,15 +255,24 @@ public class UIGame : GameBehaviour
             if (isPeasantButton)
             {
                 Unit peasantPrefab = city != null ? city.peasantPrefab : null;
-                SetButtonPrice(button, GetUnitGoldPrice(peasantPrefab));
+                ProductionQueueBlockReason blockReason = city != null ? city.GetPeasantQueueBlockReason() : ProductionQueueBlockReason.Invalid;
+                SetButtonPrice(button, GetUnitGoldPrice(peasantPrefab), blockReason == ProductionQueueBlockReason.InsufficientGold ? InsufficientGoldPriceColor : (blockReason == ProductionQueueBlockReason.None ? GetDefaultButtonPriceColor(button) : DisabledPriceColor));
                 SetButtonSprite(button, "iUnit", GetUnitSprite(peasantPrefab));
-                button.onClick.AddListener(() => _currentCity?.TrySpawnPeasant());
-                button.interactable = true;
+                button.onClick.AddListener(() =>
+                {
+                    _currentCity?.TrySpawnPeasant();
+                    RefreshOpenMenuState();
+                });
+                bool canCreate = blockReason == ProductionQueueBlockReason.None;
+                button.interactable = canCreate;
+                SetButtonUnitVisualState(button, canCreate);
             }
             else
             {
+                SetButtonPrice(button, 0, DisabledPriceColor);
                 SetButtonSprite(button, "iUnit", null);
                 button.interactable = false;
+                SetButtonUnitVisualState(button, false);
             }
         }
 
@@ -256,8 +284,12 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8);
-            bAddMill.onClick.AddListener(() => _currentCity?.TryUnlockHarvestField());
+            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
+            bAddMill.onClick.AddListener(() =>
+            {
+                _currentCity?.TryUnlockHarvestField();
+                RefreshOpenMenuState();
+            });
         }
     }
 
@@ -297,9 +329,9 @@ public class UIGame : GameBehaviour
         RefreshOpenUnitMenuInteractivity();
     }
 
-    private void HandleUnitTypeStateChanged(Unit.UnitType unitType, Unit.UnitState state)
+    private void HandleUnitTypeStateChanged(UnitStats unitStats, Unit.UnitState state)
     {
-        if (_joystickByType.TryGetValue(unitType, out UnitJoystick joystick) && joystick != null)
+        if (_joystickByType.TryGetValue(unitStats, out UnitJoystick joystick) && joystick != null)
         {
             joystick.SetState(state);
         }
@@ -321,6 +353,8 @@ public class UIGame : GameBehaviour
                 tCoins[i].text = goldAmount.ToString();
             }
         }
+
+        RefreshOpenMenuState();
     }
 
     private void RefreshHudCoinTexts()
@@ -353,9 +387,9 @@ public class UIGame : GameBehaviour
             return;
         }
 
-        List<Unit.UnitType> activeTypes = _playerTeam != null
+        List<UnitStats> activeTypes = _playerTeam != null
             ? _playerTeam.GetActiveControllableTypes()
-            : new List<Unit.UnitType>();
+            : new List<UnitStats>();
 
         for (int i = 0; i < unitJoysticks.Length; i++)
         {
@@ -365,26 +399,26 @@ public class UIGame : GameBehaviour
             }
         }
 
-        Dictionary<Unit.UnitType, UnitJoystick> preservedAssignments = new Dictionary<Unit.UnitType, UnitJoystick>();
+        Dictionary<UnitStats, UnitJoystick> preservedAssignments = new Dictionary<UnitStats, UnitJoystick>();
         bool[] usedSlots = new bool[unitJoysticks.Length];
 
-        foreach (Unit.UnitType unitType in activeTypes)
+        foreach (UnitStats unitStats in activeTypes)
         {
-            if (_joystickByType.TryGetValue(unitType, out UnitJoystick existingJoystick) && existingJoystick != null)
+            if (_joystickByType.TryGetValue(unitStats, out UnitJoystick existingJoystick) && existingJoystick != null)
             {
                 int slotIndex = Array.IndexOf(unitJoysticks, existingJoystick);
                 if (slotIndex >= 0 && !usedSlots[slotIndex])
                 {
-                    ConfigureJoystick(existingJoystick, unitType);
-                    preservedAssignments[unitType] = existingJoystick;
+                    ConfigureJoystick(existingJoystick, unitStats);
+                    preservedAssignments[unitStats] = existingJoystick;
                     usedSlots[slotIndex] = true;
                 }
             }
         }
 
-        foreach (Unit.UnitType unitType in activeTypes)
+        foreach (UnitStats unitStats in activeTypes)
         {
-            if (preservedAssignments.ContainsKey(unitType))
+            if (preservedAssignments.ContainsKey(unitStats))
             {
                 continue;
             }
@@ -396,57 +430,54 @@ public class UIGame : GameBehaviour
                     continue;
                 }
 
-                ConfigureJoystick(unitJoysticks[i], unitType);
-                preservedAssignments[unitType] = unitJoysticks[i];
+                ConfigureJoystick(unitJoysticks[i], unitStats);
+                preservedAssignments[unitStats] = unitJoysticks[i];
                 usedSlots[i] = true;
                 break;
             }
         }
 
         _joystickByType.Clear();
-        foreach (KeyValuePair<Unit.UnitType, UnitJoystick> pair in preservedAssignments)
+        foreach (KeyValuePair<UnitStats, UnitJoystick> pair in preservedAssignments)
         {
             _joystickByType[pair.Key] = pair.Value;
         }
     }
 
-    private void ConfigureJoystick(UnitJoystick joystick, Unit.UnitType unitType)
+    private void ConfigureJoystick(UnitJoystick joystick, UnitStats unitStats)
     {
-        if (joystick == null || _playerTeam == null)
+        if (joystick == null || _playerTeam == null || unitStats == null)
         {
             return;
         }
 
-        Unit representativeUnit = _playerTeam.GetRepresentativeControllableUnit(unitType);
-        joystick.Setup(_playerTeam, unitType, representativeUnit != null ? GetUnitSprite(representativeUnit) : null, _playerTeam.GetStateForType(unitType));
+        Unit representativeUnit = _playerTeam.GetRepresentativeControllableUnit(unitStats);
+        joystick.Setup(_playerTeam, unitStats, representativeUnit != null ? GetUnitSprite(representativeUnit) : null, _playerTeam.GetStateForStats(unitStats));
     }
 
     private void RefreshOpenUnitMenuInteractivity()
     {
+        RefreshOpenMenuState();
+    }
+
+    private void RefreshOpenMenuState()
+    {
+        if (_currentCity != null && ((menuUnits != null && menuUnits.activeSelf) || (menuMill != null && menuMill.activeSelf)))
+        {
+            OpenCityMenu(_currentCity);
+            return;
+        }
+
         if (_currentMilitaryBuild != null && menuUnits != null && menuUnits.activeSelf)
         {
             OpenMenuUnits(_currentMilitaryBuild);
+            return;
         }
-    }
 
-    private bool CanCreateUnitType(Unit unitPrefab)
-    {
-        if (_playerTeam == null || unitPrefab == null)
+        if (_currentMill != null && menuMill != null && menuMill.activeSelf)
         {
-            return false;
+            OpenMenuMill(_currentMill);
         }
-
-        if (unitPrefab is Peasant || unitPrefab.IsHero || unitPrefab.PrimaryUnitType == Unit.UnitType.other)
-        {
-            return true;
-        }
-
-        if (_playerTeam.HasActiveControllableType(unitPrefab.PrimaryUnitType))
-        {
-            return true;
-        }
-
-        return _playerTeam.GetActiveControllableTypeCount() < 5;
     }
 
     private int GetUnitGoldPrice(Unit unitPrefab)
@@ -481,7 +512,7 @@ public class UIGame : GameBehaviour
         return hitbox != null && hitbox.unitStats != null ? hitbox.unitStats.sprite : null;
     }
 
-    private void SetButtonPrice(Button button, int goldPrice)
+    private void SetButtonPrice(Button button, int goldPrice, Color textColor)
     {
         if (button == null)
         {
@@ -494,8 +525,37 @@ public class UIGame : GameBehaviour
             if (texts[i] != null && texts[i].gameObject.name == "tCoins")
             {
                 texts[i].text = goldPrice.ToString();
+                texts[i].color = textColor;
             }
         }
+    }
+
+    private Color GetDefaultButtonPriceColor(Button button)
+    {
+        if (button == null)
+        {
+            return Color.white;
+        }
+
+        TextMeshProUGUI[] texts = button.GetComponentsInChildren<TextMeshProUGUI>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            TextMeshProUGUI text = texts[i];
+            if (text == null || text.gameObject.name != "tCoins")
+            {
+                continue;
+            }
+
+            if (!_defaultButtonPriceColors.TryGetValue(text, out Color defaultColor))
+            {
+                defaultColor = text.color;
+                _defaultButtonPriceColors[text] = defaultColor;
+            }
+
+            return defaultColor;
+        }
+
+        return Color.white;
     }
 
     private void SetButtonSprite(Button button, string imageObjectName, Sprite sprite)
@@ -515,6 +575,33 @@ public class UIGame : GameBehaviour
 
             images[i].sprite = sprite;
             images[i].enabled = sprite != null;
+        }
+    }
+
+    private void SetButtonUnitVisualState(Button button, bool isEnabled)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        if (button.targetGraphic != null)
+        {
+            button.targetGraphic.color = isEnabled ? NormalImageColor : DisabledImageColor;
+        }
+
+        Image[] images = button.GetComponentsInChildren<Image>(true);
+        for (int i = 0; i < images.Length; i++)
+        {
+            if (images[i] == null)
+            {
+                continue;
+            }
+
+            if (images[i].gameObject.name == "iUnit")
+            {
+                images[i].color = isEnabled ? NormalImageColor : DisabledImageColor;
+            }
         }
     }
 }

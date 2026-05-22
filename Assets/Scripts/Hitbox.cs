@@ -46,11 +46,21 @@ public class Hitbox : GameBehaviour
         }
     }
 
-    public virtual void TakeDamage(int damage, DamageTypes damageType)
+    public virtual void TakeDamage(int damage, DamageTypes damageType, UnitStats sourceStats = null)
     {
         if (_isDead)
         {
             return;
+        }
+
+        if (sourceStats != null)
+        {
+            damage = Mathf.RoundToInt(damage * sourceStats.GetOutgoingDamageMultiplier(damageType, unitStats));
+        }
+
+        if (unitStats != null)
+        {
+            damage = Mathf.RoundToInt(damage * unitStats.GetIncomingDamageMultiplier(damageType, sourceStats));
         }
 
         if (damageType == DamageTypes.melee)
@@ -102,5 +112,11 @@ public class Hitbox : GameBehaviour
         {
             Destroy(gameObject);
         }
+    }
+
+    public virtual void Revive()
+    {
+        _isDead = false;
+        _currentHp = unitStats == null ? 1 : unitStats.health;
     }
 }

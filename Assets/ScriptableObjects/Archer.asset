@@ -13,9 +13,10 @@ MonoBehaviour:
   m_Name: Archer
   m_EditorClassIdentifier: 
   sprite: {fileID: 21300000, guid: ba64ad7578da94dad83b3bad58eb0308, type: 3}
-  description: 
-  damageType: 0
-  unitTypes: 00000000
+  description: Archers are perfect ranged units for countering melee infantry. Damage
+    against pikemen is increased.
+  damageType: 1
+  unitTypes: 0000000001000000
   armorType: 0
   goldPrice: 12
   health: 30
@@ -25,11 +26,17 @@ MonoBehaviour:
   distanceArmor: 0
   range: 10
   damages: 1
-  attackCooldown: 1.1
+  attackCooldown: 1.5
   attackMoveStopDistance: 0.9
   aggroRange: 8
   detectionRaidRange: 15
   detectionDefenseRange: 25
+  outgoingDamageModifiers:
+  - targetType: 1
+    damageType: 0
+    unitType: 2
+    multiplier: 1.5
+  incomingDamageModifiers: []
   useProjectile: 1
   projectilePrefab: {fileID: 8827369341842755080, guid: 32f7da4486a4d4e5e97c262a9a6161e6, type: 3}
   projectileSpeed: 10

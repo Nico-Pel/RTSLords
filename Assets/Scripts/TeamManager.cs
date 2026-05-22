@@ -9,6 +9,7 @@ public class TeamManager : MonoBehaviour
 
     [SerializeField] private int teamId;
     [SerializeField] private int startingGold = 50;
+    [SerializeField] private int maxUnitCount = 50;
     [SerializeField] private float buildFacingY;
     [SerializeField] private Transform unitsRoot;
     [SerializeField] private Transform buildsRoot;
@@ -21,10 +22,11 @@ public class TeamManager : MonoBehaviour
 
     private readonly List<Unit> _units = new List<Unit>();
     private readonly List<Build> _builds = new List<Build>();
-    private readonly Dictionary<Unit.UnitType, Unit.UnitState> _typeStates = new Dictionary<Unit.UnitType, Unit.UnitState>();
+    private readonly Dictionary<UnitStats, Unit.UnitState> _typeStates = new Dictionary<UnitStats, Unit.UnitState>();
 
     public int TeamId => teamId;
     public int CurrentGold => currentGold;
+    public int MaxUnitCount => maxUnitCount;
     public TeamManager EnemyTeam { get; private set; }
     public IReadOnlyList<Unit> RegisteredUnits => _units;
     public IReadOnlyList<Build> RegisteredBuilds => _builds;
@@ -35,7 +37,7 @@ public class TeamManager : MonoBehaviour
 
     public event System.Action<int> OnGoldChanged;
     public event System.Action OnUnitsChanged;
-    public event System.Action<Unit.UnitType, Unit.UnitState> OnUnitTypeStateChanged;
+    public event System.Action<UnitStats, Unit.UnitState> OnUnitTypeStateChanged;
 
     private void Awake()
     {
@@ -185,6 +187,43 @@ public class TeamManager : MonoBehaviour
         OnUnitsChanged?.Invoke();
     }
 
+    public void HandleHeroUnitDeath(Unit heroUnit)
+    {
+        if (heroUnit == null)
+        {
+            return;
+        }
+
+        UnregisterUnit(heroUnit);
+        ReassignFollowPlayerUnitsAfterHeroDeath();
+        if (city != null)
+        {
+            city.QueueHeroRespawn(heroUnit, 15f);
+        }
+    }
+
+    public int GetCurrentUnitCount()
+    {
+        int count = 0;
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (unit == null || unit.IsDead || !unit.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    public bool HasReachedUnitCap(int additionalUnits = 1)
+    {
+        return GetCurrentUnitCount() + Mathf.Max(0, additionalUnits) > maxUnitCount;
+    }
+
     private void IgnoreCollisionsWithAlliedUnits(Unit newUnit)
     {
         if (newUnit == null || newUnit.CollisionCollider == null)
@@ -232,15 +271,15 @@ public class TeamManager : MonoBehaviour
     {
         if (player != null)
         {
-            return player.ControlledUnit;
+            return player.ControlledUnit != null && !player.ControlledUnit.IsDead ? player.ControlledUnit : null;
         }
 
         if (playerAI != null)
         {
-            return playerAI.ControlledUnit;
+            return playerAI.ControlledUnit != null && !playerAI.ControlledUnit.IsDead ? playerAI.ControlledUnit : null;
         }
 
-        return _units.FirstOrDefault(unit => unit != null && unit.IsHero);
+        return _units.FirstOrDefault(unit => unit != null && unit.IsHero && !unit.IsDead);
     }
 
     public Unit.UnitState ResolveInheritedState(Unit unit)
@@ -250,12 +289,17 @@ public class TeamManager : MonoBehaviour
             return Unit.UnitState.defendBase;
         }
 
-        return GetStateForType(unit.PrimaryUnitType);
+        return GetStateForStats(unit.StatsAsset);
     }
 
-    public void SetStateForType(Unit.UnitType unitType, Unit.UnitState newState)
+    public void SetStateForStats(UnitStats unitStats, Unit.UnitState newState)
     {
-        _typeStates[unitType] = newState;
+        if (unitStats == null)
+        {
+            return;
+        }
+
+        _typeStates[unitStats] = newState;
 
         foreach (Unit unit in _units)
         {
@@ -264,18 +308,18 @@ public class TeamManager : MonoBehaviour
                 continue;
             }
 
-            if (unit.PrimaryUnitType == unitType)
+            if (unit.StatsAsset == unitStats)
             {
                 unit.SetState(newState);
             }
         }
 
-        OnUnitTypeStateChanged?.Invoke(unitType, newState);
+        OnUnitTypeStateChanged?.Invoke(unitStats, newState);
     }
 
-    public Unit.UnitState GetStateForType(Unit.UnitType unitType)
+    public Unit.UnitState GetStateForStats(UnitStats unitStats)
     {
-        if (_typeStates.TryGetValue(unitType, out Unit.UnitState savedState))
+        if (unitStats != null && _typeStates.TryGetValue(unitStats, out Unit.UnitState savedState))
         {
             return savedState;
         }
@@ -283,14 +327,14 @@ public class TeamManager : MonoBehaviour
         return Unit.UnitState.defendBase;
     }
 
-    public bool HasActiveControllableType(Unit.UnitType unitType)
+    public bool HasActiveControllableType(UnitStats unitStats)
     {
-        return GetRepresentativeControllableUnit(unitType) != null;
+        return GetRepresentativeControllableUnit(unitStats) != null;
     }
 
     public int GetActiveControllableTypeCount()
     {
-        HashSet<Unit.UnitType> activeTypes = new HashSet<Unit.UnitType>();
+        HashSet<UnitStats> activeTypes = new HashSet<UnitStats>();
         for (int i = 0; i < _units.Count; i++)
         {
             Unit unit = _units[i];
@@ -299,36 +343,71 @@ public class TeamManager : MonoBehaviour
                 continue;
             }
 
-            activeTypes.Add(unit.PrimaryUnitType);
+            activeTypes.Add(unit.StatsAsset);
         }
 
         return activeTypes.Count;
     }
 
-    public List<Unit.UnitType> GetActiveControllableTypes()
+    public List<UnitStats> GetActiveControllableTypes()
     {
-        List<Unit.UnitType> activeTypes = new List<Unit.UnitType>();
-        HashSet<Unit.UnitType> seenTypes = new HashSet<Unit.UnitType>();
+        List<UnitStats> activeTypes = new List<UnitStats>();
+        HashSet<UnitStats> seenTypes = new HashSet<UnitStats>();
         for (int i = 0; i < _units.Count; i++)
         {
             Unit unit = _units[i];
-            if (!IsControllableTypedUnit(unit) || seenTypes.Contains(unit.PrimaryUnitType))
+            if (!IsControllableTypedUnit(unit) || seenTypes.Contains(unit.StatsAsset))
             {
                 continue;
             }
 
-            seenTypes.Add(unit.PrimaryUnitType);
-            activeTypes.Add(unit.PrimaryUnitType);
+            seenTypes.Add(unit.StatsAsset);
+            activeTypes.Add(unit.StatsAsset);
         }
 
         return activeTypes;
     }
 
-    public Unit GetRepresentativeControllableUnit(Unit.UnitType unitType)
+    public Unit GetRepresentativeControllableUnit(UnitStats unitStats)
     {
         return _units.FirstOrDefault(unit =>
             IsControllableTypedUnit(unit) &&
-            unit.PrimaryUnitType == unitType);
+            unit.StatsAsset == unitStats);
+    }
+
+    public int GetFollowPlayerUnitCount()
+    {
+        int count = 0;
+        for (int i = 0; i < _units.Count; i++)
+        {
+            if (IsFollowPlayerFormationUnit(_units[i]))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    public int GetFollowPlayerUnitIndex(Unit targetUnit)
+    {
+        if (!IsFollowPlayerFormationUnit(targetUnit))
+        {
+            return -1;
+        }
+
+        List<Unit> followers = new List<Unit>();
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (IsFollowPlayerFormationUnit(unit))
+            {
+                followers.Add(unit);
+            }
+        }
+
+        followers.Sort((left, right) => left.GetInstanceID().CompareTo(right.GetInstanceID()));
+        return followers.IndexOf(targetUnit);
     }
 
     public IEnumerable<Hitbox> EnumerateEnemyTargets()
@@ -415,7 +494,9 @@ public class TeamManager : MonoBehaviour
                 continue;
             }
 
-            if (tree.GetComponentInParent<BuildZone>() != null || tree.GetComponentInParent<HarvestField>() != null)
+            if (tree.GetComponentInParent<BuildZone>() != null ||
+                tree.GetComponentInParent<HarvestField>() != null ||
+                IsNamedBuildZoneHierarchy(tree.transform))
             {
                 continue;
             }
@@ -431,6 +512,21 @@ public class TeamManager : MonoBehaviour
         return bestTree;
     }
 
+    private bool IsNamedBuildZoneHierarchy(Transform current)
+    {
+        while (current != null)
+        {
+            if (current.name.StartsWith("BuildZone"))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
     private void EnsureTrackedStateForUnit(Unit unit)
     {
         if (!IsControllableTypedUnit(unit))
@@ -438,9 +534,9 @@ public class TeamManager : MonoBehaviour
             return;
         }
 
-        if (!_typeStates.ContainsKey(unit.PrimaryUnitType))
+        if (unit.StatsAsset != null && !_typeStates.ContainsKey(unit.StatsAsset))
         {
-            _typeStates[unit.PrimaryUnitType] = unit.CurrentUnitState;
+            _typeStates[unit.StatsAsset] = unit.CurrentUnitState;
         }
     }
 
@@ -452,5 +548,61 @@ public class TeamManager : MonoBehaviour
                !unit.IsHero &&
                !(unit is Peasant) &&
                unit.PrimaryUnitType != Unit.UnitType.other;
+    }
+
+    private bool IsFollowPlayerFormationUnit(Unit unit)
+    {
+        return IsControllableTypedUnit(unit) && unit.CurrentUnitState == Unit.UnitState.followPlayer;
+    }
+
+    private void ReassignFollowPlayerUnitsAfterHeroDeath()
+    {
+        HashSet<UnitStats> processedTypes = new HashSet<UnitStats>();
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (!IsFollowPlayerFormationUnit(unit))
+            {
+                continue;
+            }
+
+            Unit.UnitState replacementState = ResolveStateAfterHeroDeath(unit);
+            if (unit.StatsAsset != null)
+            {
+                if (processedTypes.Add(unit.StatsAsset))
+                {
+                    SetStateForStats(unit.StatsAsset, replacementState);
+                }
+            }
+            else
+            {
+                unit.SetState(replacementState);
+            }
+        }
+    }
+
+    private Unit.UnitState ResolveStateAfterHeroDeath(Unit unit)
+    {
+        if (unit == null || city == null || EnemyTeam == null || EnemyTeam.city == null)
+        {
+            return Unit.UnitState.defendBase;
+        }
+
+        Vector3 allyPosition = city.transform.position;
+        Vector3 enemyPosition = EnemyTeam.city.transform.position;
+        Vector3 axis = enemyPosition - allyPosition;
+        axis.y = 0f;
+        float lengthSqr = axis.sqrMagnitude;
+        if (lengthSqr <= 0.001f)
+        {
+            return Unit.UnitState.defendBase;
+        }
+
+        Vector3 unitDelta = unit.transform.position - allyPosition;
+        unitDelta.y = 0f;
+        float normalizedProgress = Mathf.Clamp01(Vector3.Dot(unitDelta, axis) / lengthSqr);
+        return normalizedProgress >= (2f / 3f)
+            ? Unit.UnitState.raidEnemies
+            : Unit.UnitState.defendBase;
     }
 }

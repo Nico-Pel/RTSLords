@@ -65,7 +65,7 @@ Material:
     - _BlueShadingInfluence: 0.2
     - _BlueSoftness: 0.08
     - _BlueStrength: 1
-    - _BlueThreshold: 0.12
+    - _BlueThreshold: 0.005
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1

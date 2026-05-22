@@ -133,10 +133,11 @@ public class Peasant : Unit
         if (_returningToCity)
         {
             Vector3 deliveryPoint = GetCityDeliveryPoint();
-            Vector3 deltaToCity = GetFlatDelta(deliveryPoint);
-            if (deltaToCity.magnitude > 2f)
+            float deliveryRadius = GetCityDeliveryRadius();
+            Vector3 deltaToDelivery = GetFlatDelta(deliveryPoint);
+            if (deltaToDelivery.magnitude > deliveryRadius)
             {
-                return GetDirectionTo(deliveryPoint, 2f);
+                return GetDirectionTo(deliveryPoint, deliveryRadius);
             }
 
             BeginWoodDrop();
@@ -223,12 +224,40 @@ public class Peasant : Unit
             return transform.position;
         }
 
+        Collider cityCollider = Team.city.GetComponent<Collider>();
+        if (cityCollider != null)
+        {
+            Vector3 closestPoint = cityCollider.ClosestPoint(transform.position);
+            Vector3 flatOffset = closestPoint - Team.city.transform.position;
+            flatOffset.y = 0f;
+            if (flatOffset.sqrMagnitude > 0.0001f)
+            {
+                return closestPoint;
+            }
+        }
+
         if (Team.city.spawnPos != null)
         {
             return Team.city.spawnPos.position;
         }
 
         return Team.city.transform.position;
+    }
+
+    private float GetCityDeliveryRadius()
+    {
+        if (Team == null || Team.city == null)
+        {
+            return 0.45f;
+        }
+
+        Collider cityCollider = Team.city.GetComponent<Collider>();
+        if (cityCollider != null)
+        {
+            return Mathf.Max(0.3f, Stats == null ? 0.45f : Mathf.Min(0.55f, Mathf.Max(0.3f, Stats.attackMoveStopDistance * 0.5f)));
+        }
+
+        return 0.45f;
     }
 
     private IEnumerator ResolveWoodImpactAfterDelay(int impactVersion)

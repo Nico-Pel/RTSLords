@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Mill
   m_EditorClassIdentifier: 
   sprite: {fileID: 21300000, guid: d2b07215a2b144a1a84e5023b0e2ccb9, type: 3}
-  description: 
+  description: This building allows for the creation of additional wheat fields.
   damageType: 1
   unitTypes: 04000000
   armorType: 2

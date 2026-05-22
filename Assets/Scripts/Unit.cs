@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using System;
 
 public class Unit : GameBehaviour
 {
@@ -68,15 +69,21 @@ public class Unit : GameBehaviour
     private Vector3 _currentPathTarget;
     private int _currentWaypointIndex;
     private float _nextPathRefreshTime;
+    private Renderer[] _cachedRenderers;
+    private Collider[] _cachedColliders;
+    private Animator[] _cachedAnimators;
 
     public TeamManager Team { get; private set; }
     public Hitbox Hitbox { get; private set; }
     public UnitState CurrentUnitState => _currentUnitState;
     public bool IsHero => isHero;
     public UnitType PrimaryUnitType => Stats != null ? Stats.PrimaryUnitType : UnitType.other;
+    public UnitStats StatsAsset => Stats;
     public bool IsDead => Hitbox != null && Hitbox.IsDead;
     public Collider CollisionCollider => _collisionCollider;
     protected UnitStats Stats => Hitbox != null ? Hitbox.unitStats : null;
+    public event Action<Unit> OnUnitDied;
+    public event Action<Unit> OnUnitRespawned;
 
     protected virtual void Awake()
     {
@@ -89,6 +96,7 @@ public class Unit : GameBehaviour
 
         EnsureCollisionSetup();
         ResolveAnimators();
+        CachePresentationComponents();
     }
 
     protected virtual void Start()
@@ -195,7 +203,7 @@ public class Unit : GameBehaviour
                 return GetDirectionTo(GetDefendAnchor());
             case UnitState.followPlayer:
                 Unit hero = Team.GetHeroUnit();
-                return hero == null ? GetDirectionTo(GetDefendAnchor()) : GetDirectionTo(hero.transform.position);
+                return hero == null ? GetDirectionTo(GetDefendAnchor()) : GetDirectionTo(hero.transform.position, GetFollowPlayerStoppingDistance());
             case UnitState.raidEnemies:
                 if (Team.EnemyTeam != null && Team.EnemyTeam.city != null)
                 {
@@ -339,11 +347,11 @@ public class Unit : GameBehaviour
                 projectile = projectileObject.AddComponent<Projectile>();
             }
 
-            projectile.Setup(target, damages, damageType, projectileSpeed);
+            projectile.Setup(target, damages, damageType, projectileSpeed, Stats);
             return;
         }
 
-        target.TakeDamage(damages, damageType);
+        target.TakeDamage(damages, damageType, Stats);
     }
 
     public Hitbox FindNearestEnemyTarget(float maxRange)
@@ -459,6 +467,28 @@ public class Unit : GameBehaviour
         return Stats == null ? 0.9f : Stats.attackMoveStopDistance;
     }
 
+    protected virtual float GetFollowPlayerStoppingDistance()
+    {
+        float baseDistance = Stats == null ? 2f : Mathf.Max(0.5f, Stats.followDistance);
+        if (Team == null)
+        {
+            return baseDistance;
+        }
+
+        int followerCount = Mathf.Max(1, Team.GetFollowPlayerUnitCount());
+        int followerIndex = Team.GetFollowPlayerUnitIndex(this);
+        if (followerIndex < 0)
+        {
+            return baseDistance;
+        }
+
+        float separation = Stats == null ? 1f : Mathf.Max(0.25f, Stats.separationDistance);
+        int ringIndex = Mathf.FloorToInt(Mathf.Sqrt(followerIndex));
+        float crowdBonus = Mathf.Max(0f, followerCount - 1) * separation * 0.12f;
+        float ringBonus = ringIndex * separation * 0.85f;
+        return baseDistance + crowdBonus + ringBonus;
+    }
+
     protected virtual bool ShouldPauseMovementForAttack()
     {
         return !isHero && _attackStopTimer > 0f;
@@ -548,6 +578,13 @@ public class Unit : GameBehaviour
         _rigidbody.isKinematic = true;
         _rigidbody.useGravity = false;
         _rigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+    }
+
+    private void CachePresentationComponents()
+    {
+        _cachedRenderers = GetComponentsInChildren<Renderer>(true);
+        _cachedColliders = GetComponentsInChildren<Collider>(true);
+        _cachedAnimators = GetComponentsInChildren<Animator>(true);
     }
 
     private void ResolveAnimators()
@@ -744,7 +781,9 @@ public class Unit : GameBehaviour
             return true;
         }
 
-        if (collider.GetComponentInParent<BuildZone>() != null || collider.GetComponentInParent<HarvestField>() != null)
+        if (collider.GetComponentInParent<BuildZone>() != null ||
+            collider.GetComponentInParent<HarvestField>() != null ||
+            IsNamedBuildZoneHierarchy(collider.transform))
         {
             return true;
         }
@@ -835,6 +874,73 @@ public class Unit : GameBehaviour
         ClearPath();
     }
 
+    public virtual void RespawnAt(Vector3 worldPosition, Quaternion worldRotation)
+    {
+        transform.SetPositionAndRotation(worldPosition, worldRotation);
+        _controllerMoveInput = Vector3.zero;
+        _attackCooldownTimer = 0f;
+        _attackStopTimer = 0f;
+        _pendingAttackTarget = null;
+        _pendingProjectilePrefab = null;
+        _hasPendingAttackImpact = false;
+        _pendingAttackVersion++;
+        ClearMovementPath();
+        SetPresentationVisible(true);
+
+        if (Hitbox != null)
+        {
+            Hitbox.Revive();
+        }
+
+        if (Team != null)
+        {
+            Team.RegisterUnit(this);
+        }
+
+        OnUnitRespawned?.Invoke(this);
+    }
+
+    private void SetPresentationVisible(bool isVisible)
+    {
+        if (_cachedRenderers != null)
+        {
+            for (int i = 0; i < _cachedRenderers.Length; i++)
+            {
+                if (_cachedRenderers[i] != null)
+                {
+                    _cachedRenderers[i].enabled = isVisible;
+                }
+            }
+        }
+
+        if (_cachedColliders != null)
+        {
+            for (int i = 0; i < _cachedColliders.Length; i++)
+            {
+                if (_cachedColliders[i] != null)
+                {
+                    _cachedColliders[i].enabled = isVisible;
+                }
+            }
+        }
+
+        if (_cachedAnimators != null)
+        {
+            for (int i = 0; i < _cachedAnimators.Length; i++)
+            {
+                if (_cachedAnimators[i] != null)
+                {
+                    _cachedAnimators[i].enabled = isVisible;
+                }
+            }
+        }
+
+        if (_rigidbody != null)
+        {
+            _rigidbody.detectCollisions = isVisible;
+        }
+    }
+
     private Vector3 GetAvoidanceDirection()
     {
         if (_collisionCollider == null)
@@ -850,6 +956,17 @@ public class Unit : GameBehaviour
         {
             Collider other = overlaps[i];
             if (other == null || other == _collisionCollider || other.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (ShouldIgnoreBlockingCollider(other))
+            {
+                continue;
+            }
+
+            Unit otherUnit = other.GetComponentInParent<Unit>();
+            if (otherUnit != null && otherUnit != this && otherUnit.Team == Team)
             {
                 continue;
             }
@@ -872,7 +989,7 @@ public class Unit : GameBehaviour
                 continue;
             }
 
-            float weight = other.GetComponentInParent<Unit>() != null ? 0.55f : 1f;
+            float weight = otherUnit != null ? 0.55f : 1f;
             avoidance += away.normalized * (weight / Mathf.Max(0.15f, Mathf.Sqrt(sqrDistance)));
         }
 
@@ -887,6 +1004,21 @@ public class Unit : GameBehaviour
         float halfSegment = (height * 0.5f) - radius;
         point1 = center + Vector3.up * halfSegment;
         point2 = center - Vector3.up * halfSegment;
+    }
+
+    private bool IsNamedBuildZoneHierarchy(Transform current)
+    {
+        while (current != null)
+        {
+            if (current.name.StartsWith("BuildZone"))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     public virtual string GetInfoText()
@@ -914,6 +1046,18 @@ public class Unit : GameBehaviour
 
     private void HandleHitboxDeath(Hitbox hitbox)
     {
+        ClearMovementPath();
+        _controllerMoveInput = Vector3.zero;
+        _hasPendingAttackImpact = false;
+        OnUnitDied?.Invoke(this);
+
+        if (isHero)
+        {
+            SetPresentationVisible(false);
+            Team?.HandleHeroUnitDeath(this);
+            return;
+        }
+
         if (Team != null)
         {
             Team.UnregisterUnit(this);

@@ -219,7 +219,9 @@ public class RTSGridPathfinder : MonoBehaviour
             return true;
         }
 
-        if (collider.GetComponentInParent<BuildZone>() != null || collider.GetComponentInParent<HarvestField>() != null)
+        if (collider.GetComponentInParent<BuildZone>() != null ||
+            collider.GetComponentInParent<HarvestField>() != null ||
+            IsNamedBuildZoneHierarchy(collider.transform))
         {
             return true;
         }
@@ -228,6 +230,21 @@ public class RTSGridPathfinder : MonoBehaviour
                collider.GetComponentInParent<Build>() == null &&
                collider.GetComponentInParent<Hitbox>() == null &&
                collider.GetComponentInParent<Unit>() == null;
+    }
+
+    private bool IsNamedBuildZoneHierarchy(Transform current)
+    {
+        while (current != null)
+        {
+            if (current.name.StartsWith("BuildZone"))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     private GridNode GetBestNode(List<GridNode> openSet)
