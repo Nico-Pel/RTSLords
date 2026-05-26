@@ -18,6 +18,7 @@ public class Unit : GameBehaviour
     public string unitName;
     public Sprite unitSprite;
     public bool isHero;
+    public Transform hpBarPos;
 
     [Header("Animation")]
     public Animator moveAnimator;
@@ -38,7 +39,8 @@ public class Unit : GameBehaviour
         spearman,
         cavalier,
         build,
-        other
+        other,
+        wolf
     }
     
     public enum ArmorType
@@ -54,7 +56,7 @@ public class Unit : GameBehaviour
 
     private MaterialPropertyBlock _propertyBlock;
     private Vector3 _controllerMoveInput;
-    private float _attackCooldownTimer;
+    protected float _attackCooldownTimer;
     private float _attackStopTimer;
     private CapsuleCollider _collisionCollider;
     private Rigidbody _rigidbody;
@@ -69,6 +71,11 @@ public class Unit : GameBehaviour
     private Vector3 _currentPathTarget;
     private int _currentWaypointIndex;
     private float _nextPathRefreshTime;
+    protected Hitbox _currentCombatTarget;
+    protected float _combatElapsedWithoutHit;
+    private float _timeSinceLastReceivedDamage;
+    private float _timeSinceLastAttackPerformed;
+    private float _regenTickTimer;
     private Renderer[] _cachedRenderers;
     private Collider[] _cachedColliders;
     private Animator[] _cachedAnimators;
@@ -77,8 +84,8 @@ public class Unit : GameBehaviour
     public Hitbox Hitbox { get; private set; }
     public UnitState CurrentUnitState => _currentUnitState;
     public bool IsHero => isHero;
-    public UnitType PrimaryUnitType => Stats != null ? Stats.PrimaryUnitType : UnitType.other;
-    public UnitStats StatsAsset => Stats;
+    public UnitType PrimaryUnitType => ResolveStatsAsset() != null ? ResolveStatsAsset().PrimaryUnitType : UnitType.other;
+    public UnitStats StatsAsset => ResolveStatsAsset();
     public bool IsDead => Hitbox != null && Hitbox.IsDead;
     public Collider CollisionCollider => _collisionCollider;
     protected UnitStats Stats => Hitbox != null ? Hitbox.unitStats : null;
@@ -92,11 +99,23 @@ public class Unit : GameBehaviour
         if (Hitbox != null)
         {
             Hitbox.OnDeath += HandleHitboxDeath;
+            Hitbox.OnDamaged += HandleHitboxDamaged;
         }
 
         EnsureCollisionSetup();
         ResolveAnimators();
         CachePresentationComponents();
+    }
+
+    private UnitStats ResolveStatsAsset()
+    {
+        if (Stats != null)
+        {
+            return Stats;
+        }
+
+        Hitbox localHitbox = Hitbox != null ? Hitbox : GetComponent<Hitbox>();
+        return localHitbox != null ? localHitbox.unitStats : null;
     }
 
     protected virtual void Start()
@@ -135,8 +154,13 @@ public class Unit : GameBehaviour
             _attackStopTimer -= Time.deltaTime;
         }
 
+        _combatElapsedWithoutHit += Time.deltaTime;
+        _timeSinceLastReceivedDamage += Time.deltaTime;
+        _timeSinceLastAttackPerformed += Time.deltaTime;
+
         Vector3 moveDirection = GetMoveDirection();
         TickCombat();
+        TickHeroRegeneration();
 
         if (ShouldPauseMovementForAttack())
         {
@@ -161,7 +185,13 @@ public class Unit : GameBehaviour
 
     public void SetState(UnitState state)
     {
+        if (_currentUnitState == state)
+        {
+            return;
+        }
+
         _currentUnitState = state;
+        CancelCombatIntent();
     }
 
     public virtual void SetControllerMoveInput(Vector3 moveDirection)
@@ -191,10 +221,21 @@ public class Unit : GameBehaviour
             return Vector3.zero;
         }
 
-        Hitbox immediateTarget = FindNearestEnemyTarget(Stats == null ? 6f : Stats.aggroRange);
-        if (immediateTarget != null)
+        if (ShouldRetreatForCurrentState())
         {
-            return GetDirectionTo(immediateTarget.transform.position);
+            CancelCombatIntent();
+            return GetRetreatMoveDirection();
+        }
+
+        if (_currentUnitState == UnitState.followPlayer && HasValidCombatTarget() && !IsFollowCombatTargetAllowed(_currentCombatTarget))
+        {
+            CancelCombatIntent();
+            return GetRetreatMoveDirection();
+        }
+
+        if (HasValidCombatTarget())
+        {
+            return GetDirectionTo(_currentCombatTarget.transform.position);
         }
 
         switch (_currentUnitState)
@@ -203,7 +244,12 @@ public class Unit : GameBehaviour
                 return GetDirectionTo(GetDefendAnchor());
             case UnitState.followPlayer:
                 Unit hero = Team.GetHeroUnit();
-                return hero == null ? GetDirectionTo(GetDefendAnchor()) : GetDirectionTo(hero.transform.position, GetFollowPlayerStoppingDistance());
+                if (hero == null)
+                {
+                    return GetDirectionTo(GetDefendAnchor());
+                }
+
+                return GetDirectionTo(GetFollowFormationAnchor(hero), 0.35f);
             case UnitState.raidEnemies:
                 if (Team.EnemyTeam != null && Team.EnemyTeam.city != null)
                 {
@@ -223,13 +269,37 @@ public class Unit : GameBehaviour
             return;
         }
 
+        if (ShouldRetreatForCurrentState())
+        {
+            CancelCombatIntent();
+            return;
+        }
+
+        if (_currentUnitState == UnitState.followPlayer && HasValidCombatTarget() && !IsFollowCombatTargetAllowed(_currentCombatTarget))
+        {
+            CancelCombatIntent();
+            return;
+        }
+
         float detectionRange = _currentUnitState == UnitState.raidEnemies ? Stats.detectionRaidRange : Stats.detectionDefenseRange;
         if (isHero)
         {
             detectionRange = Mathf.Max(detectionRange, Stats.aggroRange);
         }
 
-        Hitbox target = FindNearestEnemyTarget(detectionRange);
+        if (!HasValidCombatTarget())
+        {
+            if (CanAcquireCombatTargetForCurrentState())
+            {
+                Hitbox nextTarget = FindNearestEnemyTarget(detectionRange);
+                if (_currentUnitState != UnitState.followPlayer || IsFollowCombatTargetAllowed(nextTarget))
+                {
+                    _currentCombatTarget = nextTarget;
+                }
+            }
+        }
+
+        Hitbox target = _currentCombatTarget;
         if (target == null)
         {
             return;
@@ -257,6 +327,12 @@ public class Unit : GameBehaviour
             return;
         }
 
+        if (Stats.faceTargetOnAttack)
+        {
+            FaceAttackTarget(target);
+        }
+        _timeSinceLastAttackPerformed = 0f;
+        _regenTickTimer = 0f;
         TriggerAttackAnimation();
 
         if (!isHero)
@@ -334,6 +410,13 @@ public class Unit : GameBehaviour
             return;
         }
 
+        if (Stats.faceTargetOnAttack)
+        {
+            FaceAttackTarget(target);
+        }
+        _currentCombatTarget = target;
+        _combatElapsedWithoutHit = 0f;
+
         if (projectilePrefab != null)
         {
             GameObject projectileObject = Instantiate(
@@ -347,16 +430,32 @@ public class Unit : GameBehaviour
                 projectile = projectileObject.AddComponent<Projectile>();
             }
 
-            projectile.Setup(target, damages, damageType, projectileSpeed, Stats);
+            projectile.Setup(target, damages, damageType, projectileSpeed, Stats, Hitbox);
             return;
         }
 
-        target.TakeDamage(damages, damageType, Stats);
+        target.TakeDamage(damages, damageType, Stats, Hitbox);
     }
 
-    public Hitbox FindNearestEnemyTarget(float maxRange)
+    private void FaceAttackTarget(Hitbox target)
     {
-        if (Team == null || Hitbox == null)
+        if (target == null)
+        {
+            return;
+        }
+
+        Vector3 lookDirection = GetFlatDelta(target.transform.position);
+        if (lookDirection.sqrMagnitude <= 0.0001f)
+        {
+            return;
+        }
+
+        transform.rotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
+    }
+
+    public virtual Hitbox FindNearestEnemyTarget(float maxRange)
+    {
+        if (Hitbox == null)
         {
             return null;
         }
@@ -364,9 +463,26 @@ public class Unit : GameBehaviour
         float bestDistance = maxRange * maxRange;
         Hitbox bestTarget = null;
 
-        foreach (Hitbox target in Team.EnumerateEnemyTargets())
+        Hitbox[] hitboxes = FindObjectsOfType<Hitbox>(true);
+        for (int i = 0; i < hitboxes.Length; i++)
         {
+            Hitbox target = hitboxes[i];
             if (target == null || target.IsDead || target.teamID == Hitbox.teamID)
+            {
+                continue;
+            }
+
+            if (!target.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            if (target.OwnerUnit != null && !target.OwnerUnit.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            if (target.OwnerBuild != null && !target.OwnerBuild.gameObject.activeInHierarchy)
             {
                 continue;
             }
@@ -469,24 +585,7 @@ public class Unit : GameBehaviour
 
     protected virtual float GetFollowPlayerStoppingDistance()
     {
-        float baseDistance = Stats == null ? 2f : Mathf.Max(0.5f, Stats.followDistance);
-        if (Team == null)
-        {
-            return baseDistance;
-        }
-
-        int followerCount = Mathf.Max(1, Team.GetFollowPlayerUnitCount());
-        int followerIndex = Team.GetFollowPlayerUnitIndex(this);
-        if (followerIndex < 0)
-        {
-            return baseDistance;
-        }
-
-        float separation = Stats == null ? 1f : Mathf.Max(0.25f, Stats.separationDistance);
-        int ringIndex = Mathf.FloorToInt(Mathf.Sqrt(followerIndex));
-        float crowdBonus = Mathf.Max(0f, followerCount - 1) * separation * 0.12f;
-        float ringBonus = ringIndex * separation * 0.85f;
-        return baseDistance + crowdBonus + ringBonus;
+        return Stats == null ? 1.2f : Mathf.Max(0.35f, Stats.followDistance * 0.6f);
     }
 
     protected virtual bool ShouldPauseMovementForAttack()
@@ -776,6 +875,11 @@ public class Unit : GameBehaviour
             return true;
         }
 
+        if (IsGeneratedMapBlocker(collider.transform))
+        {
+            return false;
+        }
+
         if (collider.bounds.max.y <= 0.35f)
         {
             return true;
@@ -794,6 +898,22 @@ public class Unit : GameBehaviour
                collider.GetComponentInParent<Unit>() == null;
     }
 
+    private bool IsGeneratedMapBlocker(Transform transformToCheck)
+    {
+        Transform current = transformToCheck;
+        while (current != null)
+        {
+            if (current.name == "Blockers" || current.name.StartsWith("Blocker_"))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
     private Vector3 GetPathDirectionTo(Vector3 worldPosition, float stoppingDistance)
     {
         Vector3 delta = GetFlatDelta(worldPosition);
@@ -810,6 +930,11 @@ public class Unit : GameBehaviour
 
         if (_pathWaypoints.Count == 0)
         {
+            if (IsDirectPathBlocked(worldPosition, stoppingDistance))
+            {
+                return Vector3.zero;
+            }
+
             return delta.normalized;
         }
 
@@ -862,6 +987,32 @@ public class Unit : GameBehaviour
         }
     }
 
+    private bool IsDirectPathBlocked(Vector3 worldPosition, float stoppingDistance)
+    {
+        if (_collisionCollider == null)
+        {
+            return false;
+        }
+
+        Vector3 flatDelta = GetFlatDelta(worldPosition);
+        float distance = Mathf.Max(0f, flatDelta.magnitude - stoppingDistance);
+        if (distance <= 0.05f)
+        {
+            return false;
+        }
+
+        Vector3 direction = flatDelta.normalized;
+        GetCapsuleWorldPoints(transform.position, out Vector3 point1, out Vector3 point2, out float radius);
+        if (!Physics.CapsuleCast(point1, point2, radius, direction, out RaycastHit hit, distance, ~0, QueryTriggerInteraction.Ignore))
+        {
+            return false;
+        }
+
+        return hit.collider != null &&
+               !hit.collider.transform.IsChildOf(transform) &&
+               !ShouldIgnoreBlockingCollider(hit.collider);
+    }
+
     private void ClearPath()
     {
         _pathWaypoints.Clear();
@@ -874,6 +1025,36 @@ public class Unit : GameBehaviour
         ClearPath();
     }
 
+    private void TickHeroRegeneration()
+    {
+        if (!isHero || Hitbox == null || Stats == null || Stats.regen <= 0 || Stats.regenCD <= 0f)
+        {
+            return;
+        }
+
+        if (Hitbox.CurrentHp >= Stats.health)
+        {
+            _regenTickTimer = 0f;
+            return;
+        }
+
+        const float outOfCombatDelay = 5f;
+        if (_timeSinceLastReceivedDamage < outOfCombatDelay || _timeSinceLastAttackPerformed < outOfCombatDelay)
+        {
+            _regenTickTimer = 0f;
+            return;
+        }
+
+        _regenTickTimer += Time.deltaTime;
+        if (_regenTickTimer < Stats.regenCD)
+        {
+            return;
+        }
+
+        _regenTickTimer = 0f;
+        Hitbox.Heal(Stats.regen);
+    }
+
     public virtual void RespawnAt(Vector3 worldPosition, Quaternion worldRotation)
     {
         transform.SetPositionAndRotation(worldPosition, worldRotation);
@@ -884,6 +1065,9 @@ public class Unit : GameBehaviour
         _pendingProjectilePrefab = null;
         _hasPendingAttackImpact = false;
         _pendingAttackVersion++;
+        _timeSinceLastAttackPerformed = 0f;
+        _timeSinceLastReceivedDamage = 0f;
+        _regenTickTimer = 0f;
         ClearMovementPath();
         SetPresentationVisible(true);
 
@@ -1044,9 +1228,10 @@ public class Unit : GameBehaviour
         return builder.ToString().Trim();
     }
 
-    private void HandleHitboxDeath(Hitbox hitbox)
+    protected virtual void HandleHitboxDeath(Hitbox hitbox)
     {
         ClearMovementPath();
+        ClearCombatTarget();
         _controllerMoveInput = Vector3.zero;
         _hasPendingAttackImpact = false;
         OnUnitDied?.Invoke(this);
@@ -1062,5 +1247,451 @@ public class Unit : GameBehaviour
         {
             Team.UnregisterUnit(this);
         }
+    }
+
+    protected bool HasValidCombatTarget()
+    {
+        return _currentCombatTarget != null &&
+               !_currentCombatTarget.IsDead &&
+               _currentCombatTarget.teamID != Hitbox.teamID;
+    }
+
+    protected void CancelCombatIntent()
+    {
+        ClearCombatTarget();
+        _attackStopTimer = 0f;
+        _hasPendingAttackImpact = false;
+        _pendingAttackTarget = null;
+        _pendingProjectilePrefab = null;
+        _pendingAttackVersion++;
+    }
+
+    protected void ClearCombatTarget()
+    {
+        _currentCombatTarget = null;
+        _combatElapsedWithoutHit = 0f;
+    }
+
+    private Vector3 GetFollowFormationAnchor(Unit hero)
+    {
+        if (hero == null || Team == null)
+        {
+            return transform.position;
+        }
+
+        return Team.GetFollowFormationPoint(this, hero.transform.position);
+    }
+
+    private Vector3 GetRetreatMoveDirection()
+    {
+        switch (_currentUnitState)
+        {
+            case UnitState.followPlayer:
+                Unit hero = Team != null ? Team.GetHeroUnit() : null;
+                if (hero != null)
+                {
+                    return GetDirectionTo(GetFollowFormationAnchor(hero), GetFollowPlayerStoppingDistance());
+                }
+
+                return GetDirectionTo(GetDefendAnchor());
+            case UnitState.defendBase:
+                return GetDirectionTo(GetDefendAnchor());
+            default:
+                return Vector3.zero;
+        }
+    }
+
+    private bool CanAcquireCombatTargetForCurrentState()
+    {
+        if (Team == null || Stats == null)
+        {
+            return false;
+        }
+
+        if (isHero)
+        {
+            return true;
+        }
+
+        if (_currentUnitState == UnitState.followPlayer)
+        {
+            Unit hero = Team.GetHeroUnit();
+            if (hero == null)
+            {
+                return false;
+            }
+
+            float leashDistance = Mathf.Max(GetFollowPlayerStoppingDistance() + 1f, Stats.followCombatLeashDistance);
+            return GetFlatDelta(hero.transform.position).sqrMagnitude <= leashDistance * leashDistance;
+        }
+
+        if (_currentUnitState == UnitState.defendBase)
+        {
+            float leashDistance = Mathf.Max(Stats.defendAnchorDistance + 1.5f, Stats.defendLeashDistance);
+            return GetFlatDelta(Team.BasePosition).sqrMagnitude <= leashDistance * leashDistance;
+        }
+
+        return true;
+    }
+
+    private bool IsFollowCombatTargetAllowed(Hitbox target)
+    {
+        if (target == null || Team == null || _currentUnitState != UnitState.followPlayer)
+        {
+            return false;
+        }
+
+        Unit hero = Team.GetHeroUnit();
+        UnitStats heroStats = hero != null ? hero.StatsAsset : null;
+        if (hero == null || heroStats == null)
+        {
+            return false;
+        }
+
+        float heroAggroRange = Mathf.Max(0.1f, heroStats.aggroRange);
+        Vector3 targetDelta = hero.GetFlatDelta(target.transform.position);
+        return targetDelta.sqrMagnitude <= heroAggroRange * heroAggroRange;
+    }
+
+    private bool ShouldRetreatForCurrentState()
+    {
+        if (isHero || Team == null || Stats == null)
+        {
+            return false;
+        }
+
+        if (_currentUnitState == UnitState.followPlayer)
+        {
+            Unit hero = Team.GetHeroUnit();
+            if (hero == null)
+            {
+                return true;
+            }
+
+            float leashDistance = Mathf.Max(GetFollowPlayerStoppingDistance() + 1.5f, Stats.followCombatLeashDistance);
+            return GetFlatDelta(hero.transform.position).sqrMagnitude > leashDistance * leashDistance;
+        }
+
+        if (_currentUnitState == UnitState.defendBase)
+        {
+            float leashDistance = Mathf.Max(Stats.defendAnchorDistance + 2f, Stats.defendLeashDistance);
+            return GetFlatDelta(Team.BasePosition).sqrMagnitude > leashDistance * leashDistance;
+        }
+
+        return false;
+    }
+
+    protected virtual void HandleHitboxDamaged(Hitbox.DamageContext damageContext)
+    {
+        _timeSinceLastReceivedDamage = 0f;
+
+        Hitbox attacker = damageContext.sourceHitbox;
+        if (attacker == null || attacker == Hitbox || attacker.IsDead || attacker.teamID == Hitbox.teamID)
+        {
+            return;
+        }
+
+        if (_currentUnitState == UnitState.followPlayer && !IsFollowCombatTargetAllowed(attacker))
+        {
+            return;
+        }
+
+        if (!HasValidCombatTarget())
+        {
+            _currentCombatTarget = attacker;
+            return;
+        }
+
+        if (_currentCombatTarget.OwnerBuild != null && attacker.OwnerUnit != null)
+        {
+            _currentCombatTarget = attacker;
+            _combatElapsedWithoutHit = 0f;
+            return;
+        }
+
+        if (_currentCombatTarget.OwnerUnit != null && attacker.OwnerUnit != null)
+        {
+            if (_combatElapsedWithoutHit >= Mathf.Max(0.5f, Stats == null ? 3f : Stats.retargetTimeout))
+            {
+                _currentCombatTarget = attacker;
+                _combatElapsedWithoutHit = 0f;
+            }
+
+            return;
+        }
+
+        _currentCombatTarget = attacker;
+        _combatElapsedWithoutHit = 0f;
+    }
+}
+
+public class WolfUnit : Unit
+{
+    private const int NeutralTeamId = 100;
+
+    [Header("Wolf")]
+    [SerializeField] private int goldReward = 10;
+    [SerializeField] private float fallbackAggroRange = 8f;
+    [SerializeField] private float roamRadius = 3f;
+    [SerializeField] private Vector2 roamPauseDurationRange = new Vector2(0.7f, 2f);
+    [SerializeField] private Vector2 roamMoveDurationRange = new Vector2(1f, 2.4f);
+
+    private Vector3 _spawnPosition;
+    private Quaternion _spawnRotation;
+    private TeamManager _lastAttackerTeam;
+    private Vector3 _roamTarget;
+    private float _roamPauseTimer;
+    private float _roamMoveTimer;
+    private bool _isRoamPaused = true;
+    private bool _hasRetaliationTarget;
+
+    protected override void Start()
+    {
+        base.Start();
+        InitializeWolf();
+    }
+
+    public void InitializeAtSpawn(Vector3 spawnPosition, Quaternion spawnRotation)
+    {
+        _spawnPosition = spawnPosition;
+        _spawnRotation = spawnRotation;
+        transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+        InitializeWolf();
+    }
+
+    private void InitializeWolf()
+    {
+        _spawnPosition = _spawnPosition == Vector3.zero ? transform.position : _spawnPosition;
+        _spawnRotation = _spawnRotation == Quaternion.identity ? transform.rotation : _spawnRotation;
+        _hasRetaliationTarget = false;
+
+        if (Hitbox != null)
+        {
+            Hitbox.teamID = NeutralTeamId;
+            Hitbox.AssignTeam(null);
+        }
+
+        ResetRoamState(true);
+    }
+
+    protected override Vector3 GetAutoMoveDirection()
+    {
+        if (ShouldReleaseCurrentTarget())
+        {
+            CancelCombatIntent();
+        }
+
+        if (HasValidCombatTarget())
+        {
+            return GetDirectionTo(_currentCombatTarget.transform.position);
+        }
+
+        return GetRoamMoveDirection();
+    }
+
+    protected override void TickCombat()
+    {
+        if (Stats == null || Hitbox == null || Hitbox.IsDead)
+        {
+            return;
+        }
+
+        if (ShouldReleaseCurrentTarget())
+        {
+            CancelCombatIntent();
+        }
+
+        if (!HasValidCombatTarget())
+        {
+            _currentCombatTarget = FindNearestEnemyTarget(GetWolfDetectionRange());
+        }
+
+        Hitbox target = _currentCombatTarget;
+        if (target == null)
+        {
+            return;
+        }
+
+        float distanceToSurface = GetDistanceToTargetSurface(target);
+        if (distanceToSurface > Stats.range)
+        {
+            return;
+        }
+
+        if (_attackCooldownTimer > 0f)
+        {
+            return;
+        }
+
+        _attackCooldownTimer = Mathf.Max(0.1f, Stats.attackCooldown);
+        PerformAttack(target);
+    }
+
+    public override Hitbox FindNearestEnemyTarget(float maxRange)
+    {
+        if (Hitbox == null)
+        {
+            return null;
+        }
+
+        Hitbox[] hitboxes = FindObjectsOfType<Hitbox>(true);
+        float bestDistance = maxRange * maxRange;
+        Hitbox bestTarget = null;
+
+        for (int i = 0; i < hitboxes.Length; i++)
+        {
+            Hitbox candidate = hitboxes[i];
+            if (candidate == null || candidate == Hitbox || candidate.IsDead || candidate.teamID == NeutralTeamId)
+            {
+                continue;
+            }
+
+            Vector3 fromWolf = GetFlatDelta(candidate.transform.position);
+            float sqrDistance = fromWolf.sqrMagnitude;
+            if (sqrDistance > bestDistance)
+            {
+                continue;
+            }
+
+            Vector3 fromSpawn = candidate.transform.position - _spawnPosition;
+            fromSpawn.y = 0f;
+            float aggroRange = GetWolfAggroRange();
+            if (fromSpawn.sqrMagnitude > aggroRange * aggroRange)
+            {
+                continue;
+            }
+
+            bestDistance = sqrDistance;
+            bestTarget = candidate;
+        }
+
+        return bestTarget;
+    }
+
+    protected override void HandleHitboxDamaged(Hitbox.DamageContext damageContext)
+    {
+        base.HandleHitboxDamaged(damageContext);
+
+        Hitbox attackerHitbox = damageContext.sourceHitbox;
+        if (attackerHitbox != null && attackerHitbox != Hitbox && !attackerHitbox.IsDead && attackerHitbox.teamID != NeutralTeamId)
+        {
+            _currentCombatTarget = attackerHitbox;
+            _hasRetaliationTarget = true;
+            _combatElapsedWithoutHit = 0f;
+        }
+
+        TeamManager attackerTeam = attackerHitbox != null ? attackerHitbox.OwnerTeam : null;
+        if (attackerTeam != null)
+        {
+            _lastAttackerTeam = attackerTeam;
+        }
+
+        _isRoamPaused = true;
+        _roamPauseTimer = 0f;
+        _roamMoveTimer = 0f;
+    }
+
+    protected override void HandleHitboxDeath(Hitbox hitbox)
+    {
+        if (_lastAttackerTeam != null && goldReward > 0)
+        {
+            _lastAttackerTeam.AddGold(goldReward);
+            SpawnCoinEffect.SpawnAbove(transform);
+        }
+
+        base.HandleHitboxDeath(hitbox);
+    }
+
+    private bool ShouldReleaseCurrentTarget()
+    {
+        if (!HasValidCombatTarget())
+        {
+            _hasRetaliationTarget = false;
+            return false;
+        }
+
+        if (_hasRetaliationTarget)
+        {
+            return false;
+        }
+
+        Vector3 delta = _currentCombatTarget.transform.position - _spawnPosition;
+        delta.y = 0f;
+        float aggroRange = GetWolfAggroRange();
+        return delta.sqrMagnitude > aggroRange * aggroRange;
+    }
+
+    private float GetWolfAggroRange()
+    {
+        return Mathf.Max(0.5f, Stats != null ? Stats.aggroRange : fallbackAggroRange);
+    }
+
+    private float GetWolfDetectionRange()
+    {
+        if (Stats == null)
+        {
+            return fallbackAggroRange;
+        }
+
+        return Mathf.Max(Stats.aggroRange, Stats.detectionDefenseRange, fallbackAggroRange);
+    }
+
+    private Vector3 GetRoamMoveDirection()
+    {
+        if (_isRoamPaused)
+        {
+            _roamPauseTimer -= Time.deltaTime;
+            if (_roamPauseTimer > 0f)
+            {
+                return Vector3.zero;
+            }
+
+            _isRoamPaused = false;
+            _roamMoveTimer = RandomRange(roamMoveDurationRange);
+            _roamTarget = ChooseRoamTarget();
+        }
+
+        _roamMoveTimer -= Time.deltaTime;
+        if (_roamMoveTimer <= 0f || GetFlatDelta(_roamTarget).sqrMagnitude <= 0.45f * 0.45f)
+        {
+            ResetRoamState(false);
+            return Vector3.zero;
+        }
+
+        return GetDirectionTo(_roamTarget, 0.2f);
+    }
+
+    private void ResetRoamState(bool randomFacing)
+    {
+        _isRoamPaused = true;
+        _roamPauseTimer = RandomRange(roamPauseDurationRange);
+        _roamMoveTimer = 0f;
+        _roamTarget = _spawnPosition;
+
+        if (!randomFacing)
+        {
+            return;
+        }
+
+        Vector3 forward = Quaternion.Euler(0f, UnityEngine.Random.Range(0f, 360f), 0f) * Vector3.forward;
+        if (forward.sqrMagnitude > 0.0001f)
+        {
+            transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
+        }
+    }
+
+    private Vector3 ChooseRoamTarget()
+    {
+        float radius = UnityEngine.Random.Range(0.35f, Mathf.Max(0.35f, roamRadius));
+        float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+        Vector3 offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius;
+        return _spawnPosition + offset;
+    }
+
+    private float RandomRange(Vector2 range)
+    {
+        float min = Mathf.Min(range.x, range.y);
+        float max = Mathf.Max(range.x, range.y);
+        return UnityEngine.Random.Range(min, max);
     }
 }

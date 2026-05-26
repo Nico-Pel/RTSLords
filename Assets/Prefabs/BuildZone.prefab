@@ -74,7 +74,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: fcade89db42324abe85e0996e9f41a38, type: 3}
-  m_Color: {r: 1, g: 0.8863484, b: 0.6745283, a: 1}
+  m_Color: {r: 1, g: 0.79607844, b: 0.4117647, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -131,6 +131,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerActivator: {fileID: 5898334560816435765}
+  _currentBuild: {fileID: 0}
+  occupiedVisualsToHide: []
 --- !u!1001 &3878661290335835080
 PrefabInstance:
   m_ObjectHideFlags: 0

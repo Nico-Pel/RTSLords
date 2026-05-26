@@ -9,7 +9,8 @@ public class TeamManager : MonoBehaviour
 
     [SerializeField] private int teamId;
     [SerializeField] private int startingGold = 50;
-    [SerializeField] private int maxUnitCount = 50;
+    [SerializeField] private int maxPeasantCount = 20;
+    [SerializeField] private int maxCombatUnitCount = 20;
     [SerializeField] private float buildFacingY;
     [SerializeField] private Transform unitsRoot;
     [SerializeField] private Transform buildsRoot;
@@ -26,7 +27,8 @@ public class TeamManager : MonoBehaviour
 
     public int TeamId => teamId;
     public int CurrentGold => currentGold;
-    public int MaxUnitCount => maxUnitCount;
+    public int MaxPeasantCount => maxPeasantCount;
+    public int MaxCombatUnitCount => maxCombatUnitCount;
     public TeamManager EnemyTeam { get; private set; }
     public IReadOnlyList<Unit> RegisteredUnits => _units;
     public IReadOnlyList<Build> RegisteredBuilds => _builds;
@@ -38,6 +40,31 @@ public class TeamManager : MonoBehaviour
     public event System.Action<int> OnGoldChanged;
     public event System.Action OnUnitsChanged;
     public event System.Action<UnitStats, Unit.UnitState> OnUnitTypeStateChanged;
+
+    public static TeamManager GetLocalPlayerTeam()
+    {
+        return Teams.FirstOrDefault(team => team != null && team.player != null);
+    }
+
+    public void ConfigureGeneratedTeam(int id, bool isHumanControlled, Color color, PlayerController playerController, AIHeroController aiHeroController, City teamCity)
+    {
+        teamId = Mathf.Max(1, id);
+        teamColor = color;
+        player = isHumanControlled ? playerController : null;
+        playerAI = isHumanControlled ? null : aiHeroController;
+        city = teamCity;
+        buildFacingY = isHumanControlled ? 180f : 0f;
+
+        if (playerController != null)
+        {
+            playerController.gameObject.SetActive(isHumanControlled);
+        }
+
+        if (aiHeroController != null)
+        {
+            aiHeroController.gameObject.SetActive(!isHumanControlled);
+        }
+    }
 
     private void Awake()
     {
@@ -219,9 +246,48 @@ public class TeamManager : MonoBehaviour
         return count;
     }
 
-    public bool HasReachedUnitCap(int additionalUnits = 1)
+    public int GetCurrentPeasantCount()
     {
-        return GetCurrentUnitCount() + Mathf.Max(0, additionalUnits) > maxUnitCount;
+        int count = 0;
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (!IsAliveTrackedUnit(unit) || !(unit is Peasant))
+            {
+                continue;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    public int GetCurrentCombatUnitCount()
+    {
+        int count = 0;
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (!IsAliveTrackedUnit(unit) || unit.IsHero || unit is Peasant)
+            {
+                continue;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    public bool HasReachedPeasantCap(int additionalUnits = 1)
+    {
+        return GetCurrentPeasantCount() + Mathf.Max(0, additionalUnits) > maxPeasantCount;
+    }
+
+    public bool HasReachedCombatUnitCap(int additionalUnits = 1)
+    {
+        return GetCurrentCombatUnitCount() + Mathf.Max(0, additionalUnits) > maxCombatUnitCount;
     }
 
     private void IgnoreCollisionsWithAlliedUnits(Unit newUnit)
@@ -241,6 +307,11 @@ public class TeamManager : MonoBehaviour
 
             Physics.IgnoreCollision(newUnit.CollisionCollider, alliedUnit.CollisionCollider, true);
         }
+    }
+
+    private bool IsAliveTrackedUnit(Unit unit)
+    {
+        return unit != null && !unit.IsDead && unit.gameObject.activeInHierarchy;
     }
 
     public void RegisterBuild(Build build)
@@ -377,37 +448,51 @@ public class TeamManager : MonoBehaviour
 
     public int GetFollowPlayerUnitCount()
     {
-        int count = 0;
-        for (int i = 0; i < _units.Count; i++)
-        {
-            if (IsFollowPlayerFormationUnit(_units[i]))
-            {
-                count++;
-            }
-        }
-
-        return count;
+        return GetOrderedFollowPlayerUnits().Count;
     }
 
-    public int GetFollowPlayerUnitIndex(Unit targetUnit)
+    public Vector3 GetFollowFormationPoint(Unit targetUnit, Vector3 heroPosition)
     {
         if (!IsFollowPlayerFormationUnit(targetUnit))
         {
-            return -1;
+            return heroPosition;
         }
 
-        List<Unit> followers = new List<Unit>();
-        for (int i = 0; i < _units.Count; i++)
+        List<Unit> followers = GetOrderedFollowPlayerUnits();
+        int followerIndex = followers.IndexOf(targetUnit);
+        if (followerIndex < 0)
         {
-            Unit unit = _units[i];
-            if (IsFollowPlayerFormationUnit(unit))
-            {
-                followers.Add(unit);
-            }
+            return heroPosition;
         }
 
-        followers.Sort((left, right) => left.GetInstanceID().CompareTo(right.GetInstanceID()));
-        return followers.IndexOf(targetUnit);
+        float baseRadius = targetUnit.StatsAsset == null ? 1.2f : Mathf.Max(0.55f, targetUnit.StatsAsset.followDistance * 0.65f);
+        float spacing = targetUnit.StatsAsset == null ? 0.85f : Mathf.Max(0.35f, targetUnit.StatsAsset.separationDistance * 0.8f);
+
+        if (followerIndex == 0)
+        {
+            return heroPosition + new Vector3(baseRadius, 0f, 0f);
+        }
+
+        int slotCounter = 0;
+        int ring = 0;
+        while (true)
+        {
+            float ringRadius = baseRadius + (ring * spacing);
+            int slotsInRing = Mathf.Max(6, Mathf.CeilToInt((Mathf.PI * 2f * ringRadius) / spacing));
+            for (int slot = 0; slot < slotsInRing; slot++)
+            {
+                if (slotCounter == followerIndex)
+                {
+                    float angle = (slot / (float)slotsInRing) * Mathf.PI * 2f;
+                    Vector3 offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * ringRadius;
+                    return heroPosition + offset;
+                }
+
+                slotCounter++;
+            }
+
+            ring++;
+        }
     }
 
     public IEnumerable<Hitbox> EnumerateEnemyTargets()
@@ -553,6 +638,22 @@ public class TeamManager : MonoBehaviour
     private bool IsFollowPlayerFormationUnit(Unit unit)
     {
         return IsControllableTypedUnit(unit) && unit.CurrentUnitState == Unit.UnitState.followPlayer;
+    }
+
+    private List<Unit> GetOrderedFollowPlayerUnits()
+    {
+        List<Unit> followers = new List<Unit>();
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (IsFollowPlayerFormationUnit(unit))
+            {
+                followers.Add(unit);
+            }
+        }
+
+        followers.Sort((left, right) => left.GetInstanceID().CompareTo(right.GetInstanceID()));
+        return followers;
     }
 
     private void ReassignFollowPlayerUnitsAfterHeroDeath()

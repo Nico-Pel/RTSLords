@@ -9,14 +9,16 @@ public class Projectile : MonoBehaviour
     private Hitbox.DamageTypes _damageType;
     private float _speed;
     private UnitStats _sourceStats;
+    private Hitbox _sourceHitbox;
 
-    public void Setup(Hitbox target, int damage, Hitbox.DamageTypes damageType, float speed, UnitStats sourceStats = null)
+    public void Setup(Hitbox target, int damage, Hitbox.DamageTypes damageType, float speed, UnitStats sourceStats = null, Hitbox sourceHitbox = null)
     {
         _target = target;
         _damage = damage;
         _damageType = damageType;
         _speed = Mathf.Max(0.1f, speed);
         _sourceStats = sourceStats;
+        _sourceHitbox = sourceHitbox;
     }
 
     private void Update()
@@ -65,7 +67,7 @@ public class Projectile : MonoBehaviour
     {
         if (_target != null && !_target.IsDead)
         {
-            _target.TakeDamage(_damage, _damageType, _sourceStats);
+            _target.TakeDamage(_damage, _damageType, _sourceStats, _sourceHitbox);
         }
 
         Destroy(gameObject);

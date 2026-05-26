@@ -25,6 +25,7 @@ public class BuildStatusWidget : MonoBehaviour
     [SerializeField] private float queueLeftPadding = 28f;
 
     private readonly List<BuildProductionQueueIcon> _queueIcons = new List<BuildProductionQueueIcon>();
+    private Vector3 _defaultLocalEulerAngles;
 
     private void Awake()
     {
@@ -32,6 +33,8 @@ public class BuildStatusWidget : MonoBehaviour
         {
             targetBuild = GetComponentInParent<Build>();
         }
+
+        _defaultLocalEulerAngles = transform.localEulerAngles;
     }
 
     private void LateUpdate()
@@ -41,6 +44,7 @@ public class BuildStatusWidget : MonoBehaviour
             return;
         }
 
+        UpdateTeamPresentation();
         UpdateHealth();
         UpdateProduction();
     }
@@ -60,6 +64,22 @@ public class BuildStatusWidget : MonoBehaviour
 
     private void UpdateProduction()
     {
+        if (IsEnemyBuild())
+        {
+            if (productionRoot != null)
+            {
+                productionRoot.SetActive(false);
+            }
+
+            SetQueueIconCount(0);
+            if (productionFill != null)
+            {
+                productionFill.fillAmount = 0f;
+            }
+
+            return;
+        }
+
         IBuildProductionSource productionSource = targetBuild as IBuildProductionSource;
         bool hasProduction = productionSource != null && productionSource.GetProductionPreviewCount() > 0;
 
@@ -168,5 +188,25 @@ public class BuildStatusWidget : MonoBehaviour
     private float ResolveIconWidth(RectTransform iconRect)
     {
         return iconRect.rect.width * iconRect.localScale.x;
+    }
+
+    private void UpdateTeamPresentation()
+    {
+        Vector3 targetEulerAngles = _defaultLocalEulerAngles;
+        if (IsEnemyBuild())
+        {
+            targetEulerAngles.y = Mathf.Repeat(_defaultLocalEulerAngles.y + 180f, 360f);
+        }
+
+        transform.localEulerAngles = targetEulerAngles;
+    }
+
+    private bool IsEnemyBuild()
+    {
+        TeamManager localPlayerTeam = TeamManager.GetLocalPlayerTeam();
+        return targetBuild != null &&
+               targetBuild.Team != null &&
+               localPlayerTeam != null &&
+               targetBuild.Team != localPlayerTeam;
     }
 }

@@ -54,15 +54,20 @@ public class RTSGridPathfinder : MonoBehaviour
 
     public bool TryFindPath(Vector3 startWorld, Vector3 endWorld, Collider selfCollider, out List<Vector3> waypoints)
     {
-        if (TryFindPathInternal(startWorld, endWorld, selfCollider, pathPadding, out waypoints))
+        if (TryFindPathInternal(startWorld, endWorld, selfCollider, pathPadding, maxExpandedNodes, out waypoints))
         {
             return true;
         }
 
-        return TryFindPathInternal(startWorld, endWorld, selfCollider, pathPadding * 1.75f, out waypoints);
+        if (TryFindPathInternal(startWorld, endWorld, selfCollider, pathPadding * 1.75f, maxExpandedNodes * 2, out waypoints))
+        {
+            return true;
+        }
+
+        return TryFindPathInternal(startWorld, endWorld, selfCollider, pathPadding * 2.5f, maxExpandedNodes * 3, out waypoints);
     }
 
-    private bool TryFindPathInternal(Vector3 startWorld, Vector3 endWorld, Collider selfCollider, float padding, out List<Vector3> waypoints)
+    private bool TryFindPathInternal(Vector3 startWorld, Vector3 endWorld, Collider selfCollider, float padding, int expandedNodeBudget, out List<Vector3> waypoints)
     {
         Vector3 flatStart = new Vector3(startWorld.x, 0f, startWorld.z);
         Vector3 flatEnd = new Vector3(endWorld.x, 0f, endWorld.z);
@@ -97,7 +102,7 @@ public class RTSGridPathfinder : MonoBehaviour
         startNode.hCost = Heuristic(startNode, endNode);
 
         int expandedNodes = 0;
-        while (openSet.Count > 0 && expandedNodes < maxExpandedNodes)
+        while (openSet.Count > 0 && expandedNodes < Mathf.Max(maxExpandedNodes, expandedNodeBudget))
         {
             expandedNodes++;
             GridNode currentNode = GetBestNode(openSet);

@@ -21,7 +21,7 @@ public class Mill : Build
 
     public override void OpenBuildMenu()
     {
-        if (playerActivator == null || playerActivator.LastTriggeringTeam != Team)
+        if (!CanOpenMenuForHumanPlayer())
         {
             return;
         }

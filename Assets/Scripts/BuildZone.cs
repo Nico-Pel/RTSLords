@@ -35,9 +35,14 @@ public class BuildZone : GameBehaviour
 
     private void OpenBuildMenu()
     {
-        if (IsOccupied || playerActivator == null || playerActivator.LastTriggeringTeam == null)
+        if (IsOccupied)
         {
             CloseMenu();
+            return;
+        }
+
+        if (!CanOpenMenuForHumanPlayer())
+        {
             return;
         }
 
@@ -54,6 +59,13 @@ public class BuildZone : GameBehaviour
         }
 
         UIGame.Instance?.OpenMenuBuilds(this, builds);
+    }
+
+    private bool CanOpenMenuForHumanPlayer()
+    {
+        return playerActivator != null &&
+               playerActivator.LastTriggeringTeam != null &&
+               playerActivator.LastTriggeringTeam.player != null;
     }
 
     private void CloseMenu()
@@ -83,6 +95,7 @@ public class BuildZone : GameBehaviour
         _currentBuild = build;
         SetOccupiedState(true);
         UIGame.Instance?.CloseMenusIfOwnedBy(this);
+        PlayerActivator.RefreshInteractionsFor(team.GetHeroUnit());
         return true;
     }
 

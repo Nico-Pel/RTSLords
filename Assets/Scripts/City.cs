@@ -46,7 +46,7 @@ public class City : Build, IBuildProductionSource
 
     public override void OpenBuildMenu()
     {
-        if (playerActivator == null || playerActivator.LastTriggeringTeam != Team)
+        if (!CanOpenMenuForHumanPlayer())
         {
             return;
         }
@@ -134,7 +134,7 @@ public class City : Build, IBuildProductionSource
             return ProductionQueueBlockReason.Invalid;
         }
 
-        if (Team.HasReachedUnitCap())
+        if (Team.HasReachedPeasantCap())
         {
             return ProductionQueueBlockReason.UnitCapReached;
         }

@@ -6,8 +6,12 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
 {
     [SerializeField] private RectTransform joystickHandle;
     [SerializeField] private Image unitImage;
+    [SerializeField] private Image stateBackground;
     [SerializeField] private float maxVerticalOffset = 42f;
     [SerializeField] private float triggerThreshold = 18f;
+    [SerializeField] private Color defendColor = new Color(0.12f, 0.5f, 1f, 1f);
+    [SerializeField] private Color followColor = new Color(1f, 0.62f, 0.12f, 1f);
+    [SerializeField] private Color raidColor = new Color(0.95f, 0.22f, 0.22f, 1f);
 
     private RectTransform _rootRectTransform;
     private TeamManager _team;
@@ -36,13 +40,18 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
             }
         }
 
+        if (stateBackground == null && joystickHandle != null)
+        {
+            stateBackground = joystickHandle.GetComponent<Image>();
+        }
+
         if (joystickHandle != null)
         {
             _restPosition = joystickHandle.anchoredPosition;
         }
     }
 
-    public void Setup(TeamManager team, UnitStats unitStats, Sprite sprite, Unit.UnitState state)
+    public void Setup(TeamManager team, UnitStats unitStats, Sprite fallbackSprite, Unit.UnitState state)
     {
         _team = team;
         _unitStats = unitStats;
@@ -50,8 +59,9 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
 
         if (unitImage != null)
         {
-            unitImage.sprite = sprite;
-            unitImage.enabled = sprite != null;
+            Sprite resolvedSprite = ResolveUnitSprite(fallbackSprite);
+            unitImage.sprite = resolvedSprite;
+            unitImage.enabled = resolvedSprite != null;
         }
 
         if (joystickHandle != null)
@@ -59,12 +69,30 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
             joystickHandle.anchoredPosition = _restPosition;
         }
 
+        RefreshStateVisual();
+
         gameObject.SetActive(true);
+    }
+
+    private Sprite ResolveUnitSprite(Sprite fallbackSprite)
+    {
+        if (fallbackSprite != null)
+        {
+            return fallbackSprite;
+        }
+
+        if (_unitStats != null && _unitStats.sprite != null)
+        {
+            return _unitStats.sprite;
+        }
+
+        return null;
     }
 
     public void SetState(Unit.UnitState state)
     {
         _currentState = state;
+        RefreshStateVisual();
         ResetHandle();
     }
 
@@ -123,6 +151,27 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         if (joystickHandle != null)
         {
             joystickHandle.anchoredPosition = _restPosition;
+        }
+    }
+
+    private void RefreshStateVisual()
+    {
+        if (stateBackground == null)
+        {
+            return;
+        }
+
+        switch (_currentState)
+        {
+            case Unit.UnitState.raidEnemies:
+                stateBackground.color = raidColor;
+                break;
+            case Unit.UnitState.followPlayer:
+                stateBackground.color = followColor;
+                break;
+            default:
+                stateBackground.color = defendColor;
+                break;
         }
     }
 

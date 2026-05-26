@@ -26,7 +26,7 @@ public class MilitaryBuild : Build, IBuildProductionSource
 
     public override void OpenBuildMenu()
     {
-        if (playerActivator == null || playerActivator.LastTriggeringTeam != Team)
+        if (!CanOpenMenuForHumanPlayer())
         {
             return;
         }
@@ -80,7 +80,7 @@ public class MilitaryBuild : Build, IBuildProductionSource
             return ProductionQueueBlockReason.QueueFull;
         }
 
-        if (Team.HasReachedUnitCap())
+        if (Team.HasReachedCombatUnitCap())
         {
             return ProductionQueueBlockReason.UnitCapReached;
         }

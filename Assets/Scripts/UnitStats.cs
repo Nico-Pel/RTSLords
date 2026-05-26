@@ -60,11 +60,14 @@ public class UnitStats : ScriptableObject
     public float range = 1f;
     public int damages = 3;
     public float attackCooldown = 1.1f;
+    public bool faceTargetOnAttack = true;
     public float attackMoveStopDistance = 0.9f;
     public float aggroRange = 8f;
     public float detectionRaidRange = 15f;
     public float detectionDefenseRange = 25f;
     public float creationTime = 10f;
+    public int regen = 0;
+    public float regenCD = 3f;
 
     [Header("Strengths & Weaknesses")]
     public List<DamageModifier> outgoingDamageModifiers = new List<DamageModifier>();
@@ -79,6 +82,9 @@ public class UnitStats : ScriptableObject
     public float followDistance = 2.25f;
     public float defendAnchorDistance = 5f;
     public float separationDistance = 1.25f;
+    public float followCombatLeashDistance = 10f;
+    public float defendLeashDistance = 12f;
+    public float retargetTimeout = 3f;
 
     [Header("Economy")]
     public float harvestInterval = 5f;

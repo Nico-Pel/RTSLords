@@ -20,6 +20,7 @@ public class PlayerController : MonoBehaviour
     private Vector2 _dragStartPosition;
     private bool _isDragging;
     private bool _isControlLocked;
+    private const float CameraFollowZOffset = -28f;
 
     public TeamManager Team { get; private set; }
     public Unit ControlledUnit { get; private set; }
@@ -49,12 +50,8 @@ public class PlayerController : MonoBehaviour
     private void Start()
     {
         ConfigureHeroPersistence();
-        _mainCamera = Camera.main;
-        if (_mainCamera != null && ControlledUnit != null)
-        {
-            _cameraOffset = _mainCamera.transform.position - ControlledUnit.transform.position;
-            _cameraRotation = _mainCamera.transform.rotation;
-        }
+        CacheCameraReferences();
+        ForceMainCameraToControlledUnit();
     }
 
     public void BindTeam(TeamManager team)
@@ -64,6 +61,13 @@ public class PlayerController : MonoBehaviour
         {
             ControlledUnit.AssignTeam(team);
         }
+
+        ForceMainCameraToControlledUnit();
+    }
+
+    public void SnapCameraToControlledUnit()
+    {
+        ForceMainCameraToControlledUnit();
     }
 
     private void Update()
@@ -87,6 +91,11 @@ public class PlayerController : MonoBehaviour
     {
         if (_mainCamera == null)
         {
+            CacheCameraReferences();
+        }
+
+        if (_mainCamera == null)
+        {
             return;
         }
 
@@ -95,11 +104,15 @@ public class PlayerController : MonoBehaviour
         if (_isControlLocked && Team != null && Team.city != null)
         {
             desiredPosition = Team.city.transform.position + _cameraOffset;
+            desiredPosition.x = Team.city.transform.position.x;
+            desiredPosition.z = Team.city.transform.position.z + CameraFollowZOffset;
             lerpSpeed = cameraReturnToCityLerp;
         }
         else if (ControlledUnit != null)
         {
             desiredPosition = ControlledUnit.transform.position + _cameraOffset;
+            desiredPosition.x = ControlledUnit.transform.position.x;
+            desiredPosition.z = ControlledUnit.transform.position.z + CameraFollowZOffset;
         }
 
         _mainCamera.transform.position = Vector3.Lerp(_mainCamera.transform.position, desiredPosition, Time.deltaTime * lerpSpeed);
@@ -116,6 +129,7 @@ public class PlayerController : MonoBehaviour
     {
         _isControlLocked = false;
         _isDragging = false;
+        ForceMainCameraToControlledUnit();
     }
 
     private void ConfigureHeroPersistence()
@@ -124,6 +138,36 @@ public class PlayerController : MonoBehaviour
         {
             ControlledUnit.Hitbox.destroyOnDeath = false;
         }
+    }
+
+    private void CacheCameraReferences()
+    {
+        _mainCamera = Camera.main;
+        if (_mainCamera != null && ControlledUnit != null)
+        {
+            _cameraOffset = _mainCamera.transform.position - ControlledUnit.transform.position;
+            _cameraRotation = _mainCamera.transform.rotation;
+        }
+    }
+
+    public void ForceMainCameraToControlledUnit()
+    {
+        if (ControlledUnit == null)
+        {
+            return;
+        }
+
+        CacheCameraReferences();
+        if (_mainCamera == null)
+        {
+            return;
+        }
+
+        Vector3 snappedPosition = _mainCamera.transform.position;
+        snappedPosition.x = ControlledUnit.transform.position.x;
+        snappedPosition.z = ControlledUnit.transform.position.z + CameraFollowZOffset;
+        _mainCamera.transform.position = snappedPosition;
+        _mainCamera.transform.rotation = _cameraRotation;
     }
 
     private Vector3 ReadMovementInput()

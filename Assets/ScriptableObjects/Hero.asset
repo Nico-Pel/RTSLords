@@ -23,14 +23,16 @@ MonoBehaviour:
   chargeSpeed: 3
   armor: 0
   distanceArmor: 0
-  range: 10
-  damages: 3
+  range: 5
+  damages: 6
   attackCooldown: 1.1
   attackMoveStopDistance: 0.9
   aggroRange: 8
   detectionRaidRange: 15
   detectionDefenseRange: 25
   creationTime: 10
+  regen: 1
+  regenCD: 3
   outgoingDamageModifiers: []
   incomingDamageModifiers: []
   useProjectile: 1
@@ -39,6 +41,9 @@ MonoBehaviour:
   followDistance: 2.25
   defendAnchorDistance: 5
   separationDistance: 1.25
+  followCombatLeashDistance: 10
+  defendLeashDistance: 12
+  retargetTimeout: 3
   harvestInterval: 5
   woodHitInterval: 1
   woodHitsPerDelivery: 5

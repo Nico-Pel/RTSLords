@@ -82,7 +82,7 @@ public class Build : GameBehaviour
 
     public virtual void OpenBuildMenu()
     {
-        if (playerActivator == null || playerActivator.LastTriggeringTeam != Team)
+        if (!CanOpenMenuForHumanPlayer())
         {
             return;
         }
@@ -93,6 +93,14 @@ public class Build : GameBehaviour
     protected virtual void CloseMenu()
     {
         UIGame.Instance?.CloseMenusIfOwnedBy(this);
+    }
+
+    protected bool CanOpenMenuForHumanPlayer()
+    {
+        return playerActivator != null &&
+               playerActivator.LastTriggeringTeam == Team &&
+               playerActivator.LastTriggeringTeam != null &&
+               playerActivator.LastTriggeringTeam.player != null;
     }
 
     public virtual string GetInfoText()

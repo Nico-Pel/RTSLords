@@ -10,34 +10,29 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
-  m_Name: Cavalier
+  m_Name: MilitaryBuild
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: ee363dd2cb3c049f996be41abb429f59, type: 3}
-  description: Cavalry are fast units that are perfect for countering archers. Damage
-    taken from arrows is slightly reduced.
-  damageType: 0
-  unitTypes: 03000000
-  armorType: 0
-  goldPrice: 18
-  health: 110
-  speed: 3
-  chargeSpeed: 3.5
+  sprite: {fileID: 0}
+  description: This building allows you to create unique units.
+  damageType: 1
+  unitTypes: 04000000
+  armorType: 2
+  goldPrice: 25
+  health: 1000
+  speed: 0
+  chargeSpeed: 0
   armor: 0
   distanceArmor: 0
-  range: 1.5
+  range: 1
   damages: 3
-  attackCooldown: 1.5
+  attackCooldown: 1.1
   attackMoveStopDistance: 0.9
   aggroRange: 8
   detectionRaidRange: 15
   detectionDefenseRange: 25
-  creationTime: 15
+  creationTime: 10
   outgoingDamageModifiers: []
-  incomingDamageModifiers:
-  - targetType: 0
-    damageType: 1
-    unitType: 1
-    multiplier: 0.75
+  incomingDamageModifiers: []
   useProjectile: 0
   projectilePrefab: {fileID: 0}
   projectileSpeed: 10

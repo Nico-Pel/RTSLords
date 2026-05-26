@@ -10,35 +10,43 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
-  m_Name: Longbow
+  m_Name: Knight
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: c5fe88416dd8845bdb2411a00858fc63, type: 3}
-  description: A powerful archer with an extended range.
-  damageType: 1
-  unitTypes: 0000000001000000
+  sprite: {fileID: 21300000, guid: 0b2d8a4b3b4ce4466bba4f980f87ea13, type: 3}
+  description: The knight is a powerful horseman who is resistant to arrows and deals
+    heavy damage.
+  damageType: 0
+  unitTypes: 03000000
   armorType: 0
-  goldPrice: 25
-  health: 45
-  speed: 2.5
-  chargeSpeed: 2.75
+  goldPrice: 30
+  health: 220
+  speed: 2.8
+  chargeSpeed: 3.2
   armor: 0
   distanceArmor: 0
-  range: 14
-  damages: 2
+  range: 1.65
+  damages: 14
   attackCooldown: 1.5
   attackMoveStopDistance: 0.9
-  aggroRange: 8
-  detectionRaidRange: 15
-  detectionDefenseRange: 25
-  creationTime: 10
+  aggroRange: 4
+  detectionRaidRange: 8
+  detectionDefenseRange: 15
+  creationTime: 15
   outgoingDamageModifiers: []
-  incomingDamageModifiers: []
-  useProjectile: 1
-  projectilePrefab: {fileID: 8827369341842755080, guid: 32f7da4486a4d4e5e97c262a9a6161e6, type: 3}
+  incomingDamageModifiers:
+  - targetType: 0
+    damageType: 1
+    unitType: 1
+    multiplier: 0.5
+  useProjectile: 0
+  projectilePrefab: {fileID: 0}
   projectileSpeed: 10
   followDistance: 2.25
   defendAnchorDistance: 5
   separationDistance: 1.25
+  followCombatLeashDistance: 10
+  defendLeashDistance: 12
+  retargetTimeout: 3
   harvestInterval: 5
   woodHitInterval: 1
   woodHitsPerDelivery: 5

@@ -64,8 +64,6 @@ public class Peasant : Unit
             return Vector3.zero;
         }
 
-        RefreshHarvestAssignment();
-
         if (_assignedField != null)
         {
             return HandleFieldHarvest();
@@ -99,6 +97,21 @@ public class Peasant : Unit
 
     private Vector3 HandleFieldHarvest()
     {
+        if (_assignedField == null || !_assignedField.gameObject.activeInHierarchy)
+        {
+            if (_assignedField != null)
+            {
+                _assignedField.Release(this);
+                _assignedField = null;
+            }
+
+            RefreshHarvestAssignment();
+            if (_assignedField == null)
+            {
+                return HandleWoodHarvest();
+            }
+        }
+
         Vector3 workPosition = _assignedField.GetWorkPosition();
         Vector3 delta = GetFlatDelta(workPosition);
         float arrivalDistance = _assignedField.GetArrivalDistance();
@@ -113,6 +126,7 @@ public class Peasant : Unit
         {
             _workTimer = Mathf.Max(1f, Stats.harvestInterval);
             Team.AddGold(1);
+            SpawnCoinEffect.SpawnAbove(transform);
         }
 
         return Vector3.zero;
@@ -312,6 +326,7 @@ public class Peasant : Unit
 
         _currentWoodHits = 0;
         Team.AddGold(1);
+        SpawnCoinEffect.SpawnAbove(transform);
         StartCoroutine(FinishWoodDropAfterDelay());
     }
 

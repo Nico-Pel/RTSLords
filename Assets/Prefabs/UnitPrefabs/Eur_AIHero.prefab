@@ -112,6 +112,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Eur_AIHero
       objectReference: {fileID: 0}
+    - target: {fileID: 6998643810757285434, guid: ea49cb0cdd55842d2aa1f55f076f7576, type: 3}
+      propertyPath: attackAnimator
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 8464512615786595962, guid: ea49cb0cdd55842d2aa1f55f076f7576, type: 3}
       propertyPath: m_LocalRotation.w
       value: 0.01286002
@@ -232,6 +236,7 @@ MonoBehaviour:
   - {fileID: 9167603405611550851, guid: 6925eddb7417348c991a91110d64dede, type: 3}
   - {fileID: 783247004054792209, guid: a338da03f9ecd47d1bb206a1ec35b4aa, type: 3}
   - {fileID: 4109203478976838818, guid: da86af5a6dba042a0ba0b025a0987f67, type: 3}
-  patrolDistanceFromEnemyCity: 8
+  activatorReachDistance: 1.8
+  activatorRefreshInterval: 5
   recruitInterval: 8
   desiredPeasantCount: 2

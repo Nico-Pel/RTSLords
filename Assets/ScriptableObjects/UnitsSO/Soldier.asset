@@ -10,39 +10,38 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5859c487c35f248cfb8a98ce51317d25, type: 3}
-  m_Name: Archer
+  m_Name: Soldier
   m_EditorClassIdentifier: 
-  sprite: {fileID: 21300000, guid: ba64ad7578da94dad83b3bad58eb0308, type: 3}
-  description: Archers are perfect ranged units for countering melee infantry. Damage
-    against pikemen is increased.
-  damageType: 1
-  unitTypes: 0000000001000000
+  sprite: {fileID: 21300000, guid: e7ee67c9963ec47bd8cbbc5c14ea90af, type: 3}
+  description: Soldiers are formidable melee infantry units.
+  damageType: 0
+  unitTypes: 00000000
   armorType: 0
   goldPrice: 12
-  health: 30
+  health: 100
   speed: 2.5
   chargeSpeed: 2.75
   armor: 0
   distanceArmor: 0
-  range: 10
-  damages: 1
+  range: 1
+  damages: 6
   attackCooldown: 1.5
   attackMoveStopDistance: 0.9
-  aggroRange: 8
-  detectionRaidRange: 15
-  detectionDefenseRange: 25
-  outgoingDamageModifiers:
-  - targetType: 1
-    damageType: 0
-    unitType: 2
-    multiplier: 1.5
+  aggroRange: 4
+  detectionRaidRange: 8
+  detectionDefenseRange: 15
+  creationTime: 10
+  outgoingDamageModifiers: []
   incomingDamageModifiers: []
-  useProjectile: 1
-  projectilePrefab: {fileID: 8827369341842755080, guid: 32f7da4486a4d4e5e97c262a9a6161e6, type: 3}
+  useProjectile: 0
+  projectilePrefab: {fileID: 0}
   projectileSpeed: 10
   followDistance: 2.25
   defendAnchorDistance: 5
   separationDistance: 1.25
+  followCombatLeashDistance: 10
+  defendLeashDistance: 12
+  retargetTimeout: 3
   harvestInterval: 5
   woodHitInterval: 1
   woodHitsPerDelivery: 5

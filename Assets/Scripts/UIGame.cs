@@ -10,7 +10,6 @@ public class UIGame : GameBehaviour
 {
     private static readonly Color DisabledPriceColor = new Color(0.75f, 0.75f, 0.75f, 1f);
     private static readonly Color InsufficientGoldPriceColor = new Color(1f, 0.35f, 0.35f, 1f);
-    private static readonly Color NormalImageColor = Color.white;
     private static readonly Color DisabledImageColor = new Color(0.45f, 0.45f, 0.45f, 1f);
 
     public static UIGame Instance;
@@ -33,6 +32,8 @@ public class UIGame : GameBehaviour
     [Header("Texts")] 
     public TextMeshProUGUI tMillCount;
     public TextMeshProUGUI[] tCoins;
+    public TextMeshProUGUI tPeasantCount;
+    public TextMeshProUGUI tUnitCount;
 
     private MilitaryBuild _currentMilitaryBuild;
     private BuildZone _currentBuildZone;
@@ -40,12 +41,14 @@ public class UIGame : GameBehaviour
     private Mill _currentMill;
     private TeamManager _playerTeam;
     private UnityEngine.Object _currentMenuOwner;
+    private readonly List<Build> _currentBuildOptions = new List<Build>();
     private readonly Dictionary<UnitStats, UnitJoystick> _joystickByType = new Dictionary<UnitStats, UnitJoystick>();
     private readonly Dictionary<TextMeshProUGUI, Color> _defaultButtonPriceColors = new Dictionary<TextMeshProUGUI, Color>();
 
     protected void Awake()
     {
         Instance = this;
+        CacheDefaultButtonPriceColors();
         RefreshHudCoinTexts();
     }
 
@@ -68,6 +71,7 @@ public class UIGame : GameBehaviour
             _playerTeam.OnUnitsChanged += HandlePlayerUnitsChanged;
             _playerTeam.OnUnitTypeStateChanged += HandleUnitTypeStateChanged;
             UpdateGoldDisplay(_playerTeam.CurrentGold);
+            RefreshPopulationCounters();
             RefreshUnitJoysticks();
         }
     }
@@ -86,6 +90,9 @@ public class UIGame : GameBehaviour
     {
         _currentMenuOwner = militaryBuild;
         _currentMilitaryBuild = militaryBuild;
+        _currentCity = null;
+        _currentMill = null;
+        _currentBuildZone = null;
         CloseAllMenus();
         menuUnits.SetActive(true);
 
@@ -134,10 +141,26 @@ public class UIGame : GameBehaviour
 
     public void OpenMenuBuilds(BuildZone buildZone, List<Build> buildsToSetup)
     {
+        List<Build> buildOptions = buildsToSetup != null
+            ? new List<Build>(buildsToSetup)
+            : null;
+
         _currentMenuOwner = buildZone;
         _currentBuildZone = buildZone;
+        _currentMilitaryBuild = null;
+        _currentCity = null;
+        _currentMill = null;
+        _currentBuildOptions.Clear();
+        if (buildOptions != null)
+        {
+            _currentBuildOptions.AddRange(buildOptions);
+        }
         CloseAllMenus();
         menuBuilds.SetActive(true);
+
+        TeamManager activeTeam = buildZone != null && buildZone.playerActivator != null
+            ? buildZone.playerActivator.LastTriggeringTeam
+            : _playerTeam;
 
         for (int i = 0; i < bBuilds.Length; i++)
         {
@@ -147,26 +170,33 @@ public class UIGame : GameBehaviour
                 continue;
             }
 
-            bool isAvailable = buildsToSetup != null && i < buildsToSetup.Count && buildsToSetup[i] != null;
+            bool isAvailable = buildOptions != null && i < buildOptions.Count && buildOptions[i] != null;
             button.gameObject.SetActive(isAvailable);
             button.onClick.RemoveAllListeners();
 
             if (isAvailable)
             {
-                Build buildPrefab = buildsToSetup[i];
-                SetButtonPrice(button, buildPrefab.GoldPrice, GetDefaultButtonPriceColor(button));
+                Build buildPrefab = buildOptions[i];
+                bool hasEnoughGold = activeTeam != null && activeTeam.CurrentGold >= buildPrefab.GoldPrice;
+                SetButtonPrice(button, buildPrefab.GoldPrice, ResolveBuildButtonPriceColor(activeTeam, buildPrefab, button));
                 SetButtonSprite(button, "iBuild", buildPrefab.buildSprite);
+                button.interactable = hasEnoughGold;
+                RestoreButtonVisualState(button, "iBuild");
                 button.onClick.AddListener(() =>
                 {
                     TeamManager team = _currentBuildZone != null && _currentBuildZone.playerActivator != null
                         ? _currentBuildZone.playerActivator.LastTriggeringTeam
                         : null;
                     _currentBuildZone?.TryConstruct(buildPrefab, team);
+                    RefreshOpenMenuState();
                 });
             }
             else
             {
+                SetButtonPrice(button, 0, DisabledPriceColor);
                 SetButtonSprite(button, "iBuild", null);
+                button.interactable = false;
+                RestoreButtonVisualState(button, "iBuild");
             }
         }
     }
@@ -179,6 +209,10 @@ public class UIGame : GameBehaviour
     public void OpenMenuUpgrades(/*List Upgrades*/)
     {
         _currentMenuOwner = null;
+        _currentMilitaryBuild = null;
+        _currentBuildZone = null;
+        _currentCity = null;
+        _currentMill = null;
         CloseAllMenus();
         menuUpgrades.SetActive(true);
     }
@@ -188,6 +222,8 @@ public class UIGame : GameBehaviour
         _currentMenuOwner = mill;
         _currentMill = mill;
         _currentCity = null;
+        _currentMilitaryBuild = null;
+        _currentBuildZone = null;
         CloseAllMenus();
         menuMill.SetActive(true);
 
@@ -199,7 +235,10 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
+            bool canUnlock = CanAffordMillUpgrade(_currentMill, 8);
+            SetButtonPrice(bAddMill, 8, canUnlock ? GetDefaultButtonPriceColor(bAddMill) : ResolveMillButtonPriceColor(_currentMill, 8));
+            bAddMill.interactable = canUnlock;
+            RestoreButtonVisualState(bAddMill);
             bAddMill.onClick.AddListener(() =>
             {
                 _currentMill?.TryUnlockHarvestField();
@@ -213,6 +252,8 @@ public class UIGame : GameBehaviour
         _currentMenuOwner = city;
         _currentCity = city;
         _currentMill = null;
+        _currentMilitaryBuild = null;
+        _currentBuildZone = null;
         CloseAllMenus();
         menuMill.SetActive(true);
 
@@ -224,8 +265,15 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
-            bAddMill.onClick.AddListener(() => _currentCity?.TryUnlockHarvestField());
+            bool canUnlock = CanAffordMillUpgrade(_currentCity, 8);
+            SetButtonPrice(bAddMill, 8, canUnlock ? GetDefaultButtonPriceColor(bAddMill) : ResolveMillButtonPriceColor(_currentCity, 8));
+            bAddMill.interactable = canUnlock;
+            RestoreButtonVisualState(bAddMill);
+            bAddMill.onClick.AddListener(() =>
+            {
+                _currentCity?.TryUnlockHarvestField();
+                RefreshOpenMenuState();
+            });
         }
     }
 
@@ -235,6 +283,7 @@ public class UIGame : GameBehaviour
         _currentCity = city;
         _currentMill = null;
         _currentMilitaryBuild = null;
+        _currentBuildZone = null;
         CloseAllMenus();
 
         if (menuUnits != null) menuUnits.SetActive(true);
@@ -284,7 +333,10 @@ public class UIGame : GameBehaviour
         if (bAddMill != null)
         {
             bAddMill.onClick.RemoveAllListeners();
-            SetButtonPrice(bAddMill, 8, GetDefaultButtonPriceColor(bAddMill));
+            bool canUnlock = CanAffordMillUpgrade(_currentCity, 8);
+            SetButtonPrice(bAddMill, 8, canUnlock ? GetDefaultButtonPriceColor(bAddMill) : ResolveMillButtonPriceColor(_currentCity, 8));
+            bAddMill.interactable = canUnlock;
+            RestoreButtonVisualState(bAddMill);
             bAddMill.onClick.AddListener(() =>
             {
                 _currentCity?.TryUnlockHarvestField();
@@ -309,6 +361,10 @@ public class UIGame : GameBehaviour
             if (_currentMenuOwner == owner)
             {
                 _currentMenuOwner = null;
+                _currentMilitaryBuild = null;
+                _currentBuildZone = null;
+                _currentCity = null;
+                _currentMill = null;
             }
         }
     }
@@ -325,6 +381,7 @@ public class UIGame : GameBehaviour
 
     private void HandlePlayerUnitsChanged()
     {
+        RefreshPopulationCounters();
         RefreshUnitJoysticks();
         RefreshOpenUnitMenuInteractivity();
     }
@@ -355,6 +412,24 @@ public class UIGame : GameBehaviour
         }
 
         RefreshOpenMenuState();
+    }
+
+    private void RefreshPopulationCounters()
+    {
+        if (_playerTeam == null)
+        {
+            return;
+        }
+
+        if (tPeasantCount != null)
+        {
+            tPeasantCount.text = $"{_playerTeam.GetCurrentPeasantCount()}/{_playerTeam.MaxPeasantCount}";
+        }
+
+        if (tUnitCount != null)
+        {
+            tUnitCount.text = $"{_playerTeam.GetCurrentCombatUnitCount()}/{_playerTeam.MaxCombatUnitCount}";
+        }
     }
 
     private void RefreshHudCoinTexts()
@@ -452,7 +527,10 @@ public class UIGame : GameBehaviour
         }
 
         Unit representativeUnit = _playerTeam.GetRepresentativeControllableUnit(unitStats);
-        joystick.Setup(_playerTeam, unitStats, representativeUnit != null ? GetUnitSprite(representativeUnit) : null, _playerTeam.GetStateForStats(unitStats));
+        Sprite joystickSprite = representativeUnit != null
+            ? GetUnitSprite(representativeUnit)
+            : unitStats.sprite;
+        joystick.Setup(_playerTeam, unitStats, joystickSprite, _playerTeam.GetStateForStats(unitStats));
     }
 
     private void RefreshOpenUnitMenuInteractivity()
@@ -471,6 +549,12 @@ public class UIGame : GameBehaviour
         if (_currentMilitaryBuild != null && menuUnits != null && menuUnits.activeSelf)
         {
             OpenMenuUnits(_currentMilitaryBuild);
+            return;
+        }
+
+        if (_currentBuildZone != null && menuBuilds != null && menuBuilds.activeSelf)
+        {
+            OpenMenuBuilds(_currentBuildZone, _currentBuildOptions);
             return;
         }
 
@@ -558,6 +642,55 @@ public class UIGame : GameBehaviour
         return Color.white;
     }
 
+    private void CacheDefaultButtonPriceColors()
+    {
+        CacheDefaultButtonPriceColor(bAddMill);
+
+        if (bUnits != null)
+        {
+            for (int i = 0; i < bUnits.Length; i++)
+            {
+                CacheDefaultButtonPriceColor(bUnits[i]);
+            }
+        }
+
+        if (bBuilds != null)
+        {
+            for (int i = 0; i < bBuilds.Length; i++)
+            {
+                CacheDefaultButtonPriceColor(bBuilds[i]);
+            }
+        }
+
+        if (bUpgrades != null)
+        {
+            for (int i = 0; i < bUpgrades.Length; i++)
+            {
+                CacheDefaultButtonPriceColor(bUpgrades[i]);
+            }
+        }
+    }
+
+    private void CacheDefaultButtonPriceColor(Button button)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        TextMeshProUGUI[] texts = button.GetComponentsInChildren<TextMeshProUGUI>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            TextMeshProUGUI text = texts[i];
+            if (text == null || text.gameObject.name != "tCoins" || _defaultButtonPriceColors.ContainsKey(text))
+            {
+                continue;
+            }
+
+            _defaultButtonPriceColors[text] = text.color;
+        }
+    }
+
     private void SetButtonSprite(Button button, string imageObjectName, Sprite sprite)
     {
         if (button == null || string.IsNullOrWhiteSpace(imageObjectName))
@@ -580,14 +713,33 @@ public class UIGame : GameBehaviour
 
     private void SetButtonUnitVisualState(Button button, bool isEnabled)
     {
-        if (button == null)
+        SetButtonVisualState(button, "iUnit", isEnabled);
+    }
+
+    private void RestoreButtonVisualState(Button button, string imageObjectName = null)
+    {
+        if (button == null || string.IsNullOrWhiteSpace(imageObjectName))
         {
             return;
         }
 
-        if (button.targetGraphic != null)
+        Image[] images = button.GetComponentsInChildren<Image>(true);
+        for (int i = 0; i < images.Length; i++)
         {
-            button.targetGraphic.color = isEnabled ? NormalImageColor : DisabledImageColor;
+            if (images[i] == null || images[i].gameObject.name != imageObjectName)
+            {
+                continue;
+            }
+
+            images[i].color = Color.white;
+        }
+    }
+
+    private void SetButtonVisualState(Button button, string imageObjectName, bool isEnabled)
+    {
+        if (button == null)
+        {
+            return;
         }
 
         Image[] images = button.GetComponentsInChildren<Image>(true);
@@ -598,10 +750,56 @@ public class UIGame : GameBehaviour
                 continue;
             }
 
-            if (images[i].gameObject.name == "iUnit")
+            if (string.IsNullOrWhiteSpace(imageObjectName) || images[i].gameObject.name == imageObjectName)
             {
-                images[i].color = isEnabled ? NormalImageColor : DisabledImageColor;
+                images[i].color = isEnabled ? Color.white : DisabledImageColor;
             }
         }
+    }
+
+    private bool CanAffordMillUpgrade(Mill mill, int goldCost)
+    {
+        return mill != null &&
+               mill.Team != null &&
+               mill.FindFirstInactiveField() != null &&
+               mill.Team.CurrentGold >= goldCost;
+    }
+
+    private bool CanAffordMillUpgrade(City city, int goldCost)
+    {
+        return city != null &&
+               city.Team != null &&
+               city.FindFirstInactiveField() != null &&
+               city.Team.CurrentGold >= goldCost;
+    }
+
+    private Color ResolveMillButtonPriceColor(Mill mill, int goldCost)
+    {
+        if (mill == null || mill.Team == null || mill.FindFirstInactiveField() == null)
+        {
+            return DisabledPriceColor;
+        }
+
+        return mill.Team.CurrentGold >= goldCost ? GetDefaultButtonPriceColor(bAddMill) : InsufficientGoldPriceColor;
+    }
+
+    private Color ResolveMillButtonPriceColor(City city, int goldCost)
+    {
+        if (city == null || city.Team == null || city.FindFirstInactiveField() == null)
+        {
+            return DisabledPriceColor;
+        }
+
+        return city.Team.CurrentGold >= goldCost ? GetDefaultButtonPriceColor(bAddMill) : InsufficientGoldPriceColor;
+    }
+
+    private Color ResolveBuildButtonPriceColor(TeamManager team, Build buildPrefab, Button button)
+    {
+        if (team == null || buildPrefab == null)
+        {
+            return DisabledPriceColor;
+        }
+
+        return team.CurrentGold >= buildPrefab.GoldPrice ? GetDefaultButtonPriceColor(button) : InsufficientGoldPriceColor;
     }
 }

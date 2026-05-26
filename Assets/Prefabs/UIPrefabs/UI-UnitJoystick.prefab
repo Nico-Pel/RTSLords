@@ -181,6 +181,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7935230195a854cea9c557fd3ab01fa3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  joystickHandle: {fileID: 5311024213986626312}
+  unitImage: {fileID: 3821679296698022944}
+  stateBackground: {fileID: 8020826426512397897}
+  maxVerticalOffset: 42
+  triggerThreshold: 18
+  defendColor: {r: 0.12, g: 0.5, b: 1, a: 1}
+  followColor: {r: 1, g: 0.62, b: 0.12, a: 1}
+  raidColor: {r: 0.95, g: 0.22, b: 0.22, a: 1}
 --- !u!1 &4109730229746684125
 GameObject:
   m_ObjectHideFlags: 0
