@@ -9,8 +9,12 @@ public class TeamManager : MonoBehaviour
 
     [SerializeField] private int teamId;
     [SerializeField] private int startingGold = 50;
-    [SerializeField] private int maxPeasantCount = 20;
-    [SerializeField] private int maxCombatUnitCount = 20;
+    [SerializeField] private int maxPeasantCount = 15;
+    [SerializeField] private int maxCombatUnitCount = 15;
+    [SerializeField] private int maxGoldReserve = 100;
+    [Header("AI Bonus")]
+    [SerializeField] private int aiBonusGoldAmount = 1;
+    [SerializeField] private float aiBonusGoldInterval = 3f;
     [SerializeField] private float buildFacingY;
     [SerializeField] private Transform unitsRoot;
     [SerializeField] private Transform buildsRoot;
@@ -24,11 +28,13 @@ public class TeamManager : MonoBehaviour
     private readonly List<Unit> _units = new List<Unit>();
     private readonly List<Build> _builds = new List<Build>();
     private readonly Dictionary<UnitStats, Unit.UnitState> _typeStates = new Dictionary<UnitStats, Unit.UnitState>();
+    private float _aiBonusGoldTimer;
 
     public int TeamId => teamId;
     public int CurrentGold => currentGold;
     public int MaxPeasantCount => maxPeasantCount;
     public int MaxCombatUnitCount => maxCombatUnitCount;
+    public int MaxGoldReserve => maxGoldReserve;
     public TeamManager EnemyTeam { get; private set; }
     public IReadOnlyList<Unit> RegisteredUnits => _units;
     public IReadOnlyList<Build> RegisteredBuilds => _builds;
@@ -44,6 +50,42 @@ public class TeamManager : MonoBehaviour
     public static TeamManager GetLocalPlayerTeam()
     {
         return Teams.FirstOrDefault(team => team != null && team.player != null);
+    }
+
+    public static int ActiveTeamCount => Teams.Count;
+
+    public static int GetTotalRegisteredUnitCount()
+    {
+        int total = 0;
+        for (int i = 0; i < Teams.Count; i++)
+        {
+            TeamManager team = Teams[i];
+            if (team == null)
+            {
+                continue;
+            }
+
+            total += team._units.Count;
+        }
+
+        return total;
+    }
+
+    public static int GetTotalRegisteredBuildCount()
+    {
+        int total = 0;
+        for (int i = 0; i < Teams.Count; i++)
+        {
+            TeamManager team = Teams[i];
+            if (team == null)
+            {
+                continue;
+            }
+
+            total += team._builds.Count;
+        }
+
+        return total;
     }
 
     public void ConfigureGeneratedTeam(int id, bool isHumanControlled, Color color, PlayerController playerController, AIHeroController aiHeroController, City teamCity)
@@ -82,7 +124,7 @@ public class TeamManager : MonoBehaviour
             buildFacingY = 0f;
         }
 
-        currentGold = startingGold;
+        currentGold = Mathf.Clamp(startingGold, 0, Mathf.Max(0, maxGoldReserve));
         Teams.Add(this);
     }
 
@@ -109,6 +151,11 @@ public class TeamManager : MonoBehaviour
         ResolveEnemyTeam();
         BindControllers();
         RegisterSceneChildren();
+    }
+
+    private void Update()
+    {
+        TickAIGoldBonus();
     }
 
     private void OnDestroy()
@@ -185,8 +232,24 @@ public class TeamManager : MonoBehaviour
 
     public void AddGold(int amount)
     {
-        currentGold += Mathf.Max(0, amount);
+        currentGold = Mathf.Min(Mathf.Max(0, maxGoldReserve), currentGold + Mathf.Max(0, amount));
         OnGoldChanged?.Invoke(currentGold);
+    }
+
+    private void TickAIGoldBonus()
+    {
+        if (playerAI == null || !playerAI.isActiveAndEnabled || aiBonusGoldAmount <= 0 || aiBonusGoldInterval <= 0f)
+        {
+            _aiBonusGoldTimer = 0f;
+            return;
+        }
+
+        _aiBonusGoldTimer += Time.deltaTime;
+        while (_aiBonusGoldTimer >= aiBonusGoldInterval)
+        {
+            _aiBonusGoldTimer -= aiBonusGoldInterval;
+            AddGold(aiBonusGoldAmount);
+        }
     }
 
     public void RegisterUnit(Unit unit)
@@ -360,7 +423,20 @@ public class TeamManager : MonoBehaviour
             return Unit.UnitState.defendBase;
         }
 
-        return GetStateForStats(unit.StatsAsset);
+        UnitStats unitStats = unit.StatsAsset;
+        if (unitStats == null)
+        {
+            return Unit.UnitState.defendBase;
+        }
+
+        if (_typeStates.TryGetValue(unitStats, out Unit.UnitState savedState))
+        {
+            return ResolveAllowedStateForStats(unitStats, savedState);
+        }
+
+        Unit.UnitState fallbackState = ResolveFallbackCombatState(unit);
+        _typeStates[unitStats] = fallbackState;
+        return fallbackState;
     }
 
     public void SetStateForStats(UnitStats unitStats, Unit.UnitState newState)
@@ -370,6 +446,7 @@ public class TeamManager : MonoBehaviour
             return;
         }
 
+        newState = ResolveAllowedStateForStats(unitStats, newState);
         _typeStates[unitStats] = newState;
 
         foreach (Unit unit in _units)
@@ -388,11 +465,49 @@ public class TeamManager : MonoBehaviour
         OnUnitTypeStateChanged?.Invoke(unitStats, newState);
     }
 
+    public void ForceRetreatForStats(UnitStats unitStats)
+    {
+        if (unitStats == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (unit == null || unit.IsHero || unit is Peasant || unit.StatsAsset != unitStats)
+            {
+                continue;
+            }
+
+            unit.ForceRetreatToBase();
+        }
+    }
+
+    public void ForceRetargetForStats(UnitStats unitStats)
+    {
+        if (unitStats == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit unit = _units[i];
+            if (unit == null || unit.IsHero || unit is Peasant || unit.StatsAsset != unitStats)
+            {
+                continue;
+            }
+
+            unit.RequestForceRetarget();
+        }
+    }
+
     public Unit.UnitState GetStateForStats(UnitStats unitStats)
     {
         if (unitStats != null && _typeStates.TryGetValue(unitStats, out Unit.UnitState savedState))
         {
-            return savedState;
+            return ResolveAllowedStateForStats(unitStats, savedState);
         }
 
         return Unit.UnitState.defendBase;
@@ -523,6 +638,105 @@ public class TeamManager : MonoBehaviour
         }
     }
 
+    public Hitbox GetSharedCombatTarget(Unit requester)
+    {
+        if (requester == null || requester.StatsAsset == null)
+        {
+            return null;
+        }
+
+        float bestDistance = float.MaxValue;
+        Hitbox bestTarget = null;
+
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit ally = _units[i];
+            if (ally == null ||
+                ally == requester ||
+                ally.IsDead ||
+                !ally.gameObject.activeInHierarchy ||
+                ally.StatsAsset != requester.StatsAsset ||
+                ally.CurrentUnitState != requester.CurrentUnitState)
+            {
+                continue;
+            }
+
+            Hitbox allyTarget = ally.CurrentCombatTarget;
+            if (allyTarget == null || allyTarget.IsDead || !allyTarget.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            float sqrDistance = (ally.transform.position - requester.transform.position).sqrMagnitude;
+            if (sqrDistance < bestDistance)
+            {
+                bestDistance = sqrDistance;
+                bestTarget = allyTarget;
+            }
+        }
+
+        return bestTarget;
+    }
+
+    public Vector3 GetCombatApproachPoint(Unit requester, Hitbox target, float desiredRadius)
+    {
+        if (requester == null || target == null)
+        {
+            return target != null ? target.transform.position : transform.position;
+        }
+
+        List<Unit> groupUnits = new List<Unit>();
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit ally = _units[i];
+            if (ally == null ||
+                ally.IsDead ||
+                !ally.gameObject.activeInHierarchy ||
+                ally.StatsAsset != requester.StatsAsset ||
+                ally.CurrentUnitState != requester.CurrentUnitState)
+            {
+                continue;
+            }
+
+            Hitbox allyTarget = ally.CurrentCombatTarget;
+            if (allyTarget != target)
+            {
+                continue;
+            }
+
+            groupUnits.Add(ally);
+        }
+
+        if (!groupUnits.Contains(requester))
+        {
+            groupUnits.Add(requester);
+        }
+
+        groupUnits.Sort((left, right) => left.GetInstanceID().CompareTo(right.GetInstanceID()));
+
+        int slotIndex = groupUnits.IndexOf(requester);
+        int slotCount = Mathf.Max(1, groupUnits.Count);
+
+        Vector3 referenceDirection = target.transform.position - BasePosition;
+        referenceDirection.y = 0f;
+        if (referenceDirection.sqrMagnitude <= 0.0001f)
+        {
+            referenceDirection = requester.transform.position - target.transform.position;
+            referenceDirection.y = 0f;
+        }
+
+        if (referenceDirection.sqrMagnitude <= 0.0001f)
+        {
+            referenceDirection = Vector3.forward;
+        }
+
+        float startAngle = Mathf.Atan2(referenceDirection.z, referenceDirection.x);
+        float angleStep = (Mathf.PI * 2f) / slotCount;
+        float slotAngle = startAngle + (angleStep * slotIndex);
+        Vector3 offset = new Vector3(Mathf.Cos(slotAngle), 0f, Mathf.Sin(slotAngle)) * desiredRadius;
+        return target.transform.position + offset;
+    }
+
     public HarvestField FindAvailableHarvestField()
     {
         foreach (HarvestField harvestField in EnumerateHarvestFields())
@@ -568,12 +782,13 @@ public class TeamManager : MonoBehaviour
 
     public Tree FindClosestTree(Vector3 fromPosition)
     {
-        Tree[] trees = FindObjectsOfType<Tree>();
         Tree bestTree = null;
         float bestDistance = float.MaxValue;
 
-        foreach (Tree tree in trees)
+        IReadOnlyList<Tree> trees = Tree.ActiveTrees;
+        for (int i = 0; i < trees.Count; i++)
         {
+            Tree tree = trees[i];
             if (tree == null || tree.IsDepleted)
             {
                 continue;
@@ -632,7 +847,38 @@ public class TeamManager : MonoBehaviour
                unit.gameObject.activeInHierarchy &&
                !unit.IsHero &&
                !(unit is Peasant) &&
-               unit.PrimaryUnitType != Unit.UnitType.other;
+               (unit.PrimaryUnitType != Unit.UnitType.other || unit.IsSupportHealerUnit);
+    }
+
+    private Unit.UnitState ResolveAllowedStateForStats(UnitStats unitStats, Unit.UnitState requestedState)
+    {
+        if (unitStats != null && unitStats.isSupportHealer && requestedState == Unit.UnitState.raidEnemies)
+        {
+            return Unit.UnitState.defendBase;
+        }
+
+        return requestedState;
+    }
+
+    private Unit.UnitState ResolveFallbackCombatState(Unit unit)
+    {
+        if (!IsControllableTypedUnit(unit))
+        {
+            return Unit.UnitState.defendBase;
+        }
+
+        for (int i = 0; i < _units.Count; i++)
+        {
+            Unit otherUnit = _units[i];
+            if (!IsControllableTypedUnit(otherUnit) || otherUnit == unit)
+            {
+                continue;
+            }
+
+            return ResolveAllowedStateForStats(unit.StatsAsset, otherUnit.CurrentUnitState);
+        }
+
+        return Unit.UnitState.defendBase;
     }
 
     private bool IsFollowPlayerFormationUnit(Unit unit)

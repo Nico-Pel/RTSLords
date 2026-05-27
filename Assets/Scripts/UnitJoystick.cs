@@ -142,6 +142,14 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
             _currentState = nextState;
             _team.SetStateForStats(_unitStats, nextState);
         }
+        else if (deltaY >= triggerThreshold && _currentState == Unit.UnitState.raidEnemies)
+        {
+            _team.ForceRetargetForStats(_unitStats);
+        }
+        else if (deltaY <= -triggerThreshold && _currentState == Unit.UnitState.defendBase)
+        {
+            _team.ForceRetreatForStats(_unitStats);
+        }
 
         ResetHandle();
     }
@@ -182,7 +190,7 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
             case Unit.UnitState.defendBase:
                 return Unit.UnitState.followPlayer;
             case Unit.UnitState.followPlayer:
-                return Unit.UnitState.raidEnemies;
+                return SupportsRaidState() ? Unit.UnitState.raidEnemies : Unit.UnitState.followPlayer;
             default:
                 return currentState;
         }
@@ -199,5 +207,10 @@ public class UnitJoystick : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
             default:
                 return currentState;
         }
+    }
+
+    private bool SupportsRaidState()
+    {
+        return _unitStats == null || !_unitStats.isSupportHealer;
     }
 }

@@ -13,6 +13,13 @@ public class PlayerController : MonoBehaviour
     [Header("Camera")]
     public float cameraFollowLerp = 10f;
     public float cameraReturnToCityLerp = 5f;
+    public float cameraIdleDezoomDelay = 2f;
+    public float cameraIdleDezoomDistance = 2f;
+    public float cameraIdleDezoomLerp = 3f;
+    public float cameraIdleMovementThreshold = 0.05f;
+    public float cameraNormalFov = 20f;
+    public float cameraIdleDezoomFov = 25f;
+    public float cameraPostAttackNoDezoomDuration = 2f;
 
     private Camera _mainCamera;
     private Vector3 _cameraOffset;
@@ -20,6 +27,8 @@ public class PlayerController : MonoBehaviour
     private Vector2 _dragStartPosition;
     private bool _isDragging;
     private bool _isControlLocked;
+    private float _idleTimeWithoutMovement;
+    private Vector3 _lastControlledUnitPosition;
     private const float CameraFollowZOffset = -28f;
 
     public TeamManager Team { get; private set; }
@@ -51,6 +60,7 @@ public class PlayerController : MonoBehaviour
     {
         ConfigureHeroPersistence();
         CacheCameraReferences();
+        CacheControlledUnitPosition();
         ForceMainCameraToControlledUnit();
     }
 
@@ -62,6 +72,7 @@ public class PlayerController : MonoBehaviour
             ControlledUnit.AssignTeam(team);
         }
 
+        CacheControlledUnitPosition();
         ForceMainCameraToControlledUnit();
     }
 
@@ -84,6 +95,11 @@ public class PlayerController : MonoBehaviour
         }
 
         Vector3 moveInput = ReadMovementInput();
+        if (moveInput.sqrMagnitude > 0.0001f)
+        {
+            _idleTimeWithoutMovement = 0f;
+        }
+
         ControlledUnit.SetControllerMoveInput(moveInput);
     }
 
@@ -99,6 +115,8 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        UpdateIdleCameraTimer();
+
         Vector3 desiredPosition = _mainCamera.transform.position;
         float lerpSpeed = cameraFollowLerp;
         if (_isControlLocked && Team != null && Team.city != null)
@@ -110,25 +128,31 @@ public class PlayerController : MonoBehaviour
         }
         else if (ControlledUnit != null)
         {
-            desiredPosition = ControlledUnit.transform.position + _cameraOffset;
-            desiredPosition.x = ControlledUnit.transform.position.x;
-            desiredPosition.z = ControlledUnit.transform.position.z + CameraFollowZOffset;
+            desiredPosition = GetDesiredCameraPositionForControlledUnit();
+            if (_idleTimeWithoutMovement >= cameraIdleDezoomDelay)
+            {
+                lerpSpeed = Mathf.Min(lerpSpeed, cameraIdleDezoomLerp);
+            }
         }
 
         _mainCamera.transform.position = Vector3.Lerp(_mainCamera.transform.position, desiredPosition, Time.deltaTime * lerpSpeed);
         _mainCamera.transform.rotation = Quaternion.Lerp(_mainCamera.transform.rotation, _cameraRotation, Time.deltaTime * cameraFollowLerp);
+        _mainCamera.fieldOfView = Mathf.Lerp(_mainCamera.fieldOfView, GetDesiredCameraFov(), Time.deltaTime * lerpSpeed);
     }
 
     private void HandleControlledUnitDeath(Unit unit)
     {
         _isControlLocked = true;
         _isDragging = false;
+        _idleTimeWithoutMovement = 0f;
     }
 
     private void HandleControlledUnitRespawned(Unit unit)
     {
         _isControlLocked = false;
         _isDragging = false;
+        _idleTimeWithoutMovement = 0f;
+        CacheControlledUnitPosition();
         ForceMainCameraToControlledUnit();
     }
 
@@ -163,11 +187,104 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        Vector3 snappedPosition = _mainCamera.transform.position;
-        snappedPosition.x = ControlledUnit.transform.position.x;
-        snappedPosition.z = ControlledUnit.transform.position.z + CameraFollowZOffset;
+        Vector3 snappedPosition = GetDesiredCameraPositionForControlledUnit();
         _mainCamera.transform.position = snappedPosition;
         _mainCamera.transform.rotation = _cameraRotation;
+        _mainCamera.fieldOfView = GetDesiredCameraFov();
+    }
+
+    private Vector3 GetDesiredCameraPositionForControlledUnit()
+    {
+        if (ControlledUnit == null)
+        {
+            return _mainCamera != null ? _mainCamera.transform.position : Vector3.zero;
+        }
+
+        Vector3 desiredPosition = ControlledUnit.transform.position + _cameraOffset;
+        desiredPosition.x = ControlledUnit.transform.position.x;
+        desiredPosition.z = ControlledUnit.transform.position.z + CameraFollowZOffset;
+
+        float dezoom01 = cameraIdleDezoomDelay <= 0f || _idleTimeWithoutMovement >= cameraIdleDezoomDelay
+            ? 1f
+            : 0f;
+
+        if (IsHeroUsingPlayerActivator())
+        {
+            dezoom01 = 0f;
+        }
+
+        if (IsHeroActivelyAttacking())
+        {
+            dezoom01 = 0f;
+        }
+
+        if (cameraIdleDezoomDistance > 0f && dezoom01 > 0f)
+        {
+            Vector3 heroToCamera = desiredPosition - ControlledUnit.transform.position;
+            if (heroToCamera.sqrMagnitude > 0.0001f)
+            {
+                desiredPosition += heroToCamera.normalized * (cameraIdleDezoomDistance * dezoom01);
+            }
+        }
+
+        return desiredPosition;
+    }
+
+    private float GetDesiredCameraFov()
+    {
+        bool shouldUseDezoomFov = !_isControlLocked &&
+                                  ControlledUnit != null &&
+                                  !ControlledUnit.IsDead &&
+                                  !IsHeroUsingPlayerActivator() &&
+                                  !IsHeroActivelyAttacking() &&
+                                  _idleTimeWithoutMovement >= cameraIdleDezoomDelay;
+
+        return shouldUseDezoomFov ? cameraIdleDezoomFov : cameraNormalFov;
+    }
+
+    private bool IsHeroUsingPlayerActivator()
+    {
+        return ControlledUnit != null && PlayerActivator.GetActiveActivatorFor(ControlledUnit) != null;
+    }
+
+    private bool IsHeroActivelyAttacking()
+    {
+        return ControlledUnit != null &&
+               (ControlledUnit.IsInAttackSequence || ControlledUnit.HasAttackedRecently(cameraPostAttackNoDezoomDuration));
+    }
+
+    private void UpdateIdleCameraTimer()
+    {
+        if (ControlledUnit == null || ControlledUnit.IsDead || _isControlLocked)
+        {
+            _idleTimeWithoutMovement = 0f;
+            CacheControlledUnitPosition();
+            return;
+        }
+
+        Vector3 currentPosition = ControlledUnit.transform.position;
+        Vector3 delta = currentPosition - _lastControlledUnitPosition;
+        delta.y = 0f;
+
+        float movementThreshold = Mathf.Max(0.001f, cameraIdleMovementThreshold);
+        if (delta.sqrMagnitude <= movementThreshold * movementThreshold)
+        {
+            _idleTimeWithoutMovement += Time.deltaTime;
+        }
+        else
+        {
+            _idleTimeWithoutMovement = 0f;
+        }
+
+        _lastControlledUnitPosition = currentPosition;
+    }
+
+    private void CacheControlledUnitPosition()
+    {
+        if (ControlledUnit != null)
+        {
+            _lastControlledUnitPosition = ControlledUnit.transform.position;
+        }
     }
 
     private Vector3 ReadMovementInput()

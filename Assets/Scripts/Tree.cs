@@ -4,10 +4,14 @@ using UnityEngine;
 
 public class Tree : MonoBehaviour
 {
+    private static readonly List<Tree> ActiveTreesInternal = new List<Tree>();
+
     public int woodQuantity = 10;
     public float hitShakeAngle = 1.5f;
     public float hitShakeDuration = 0.12f;
 
+    public static IReadOnlyList<Tree> ActiveTrees => ActiveTreesInternal;
+    public static int ActiveCount => ActiveTreesInternal.Count;
     public bool IsDepleted => woodQuantity <= 0;
 
     private Coroutine _shakeRoutine;
@@ -17,6 +21,19 @@ public class Tree : MonoBehaviour
     private void Awake()
     {
         _baseRotation = transform.localRotation;
+    }
+
+    private void OnEnable()
+    {
+        if (!ActiveTreesInternal.Contains(this))
+        {
+            ActiveTreesInternal.Add(this);
+        }
+    }
+
+    private void OnDisable()
+    {
+        ActiveTreesInternal.Remove(this);
     }
 
     public bool HarvestOneWood()

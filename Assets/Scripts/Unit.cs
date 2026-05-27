@@ -76,6 +76,8 @@ public class Unit : GameBehaviour
     private float _timeSinceLastReceivedDamage;
     private float _timeSinceLastAttackPerformed;
     private float _regenTickTimer;
+    private bool _forcedRetreatToBase;
+    private bool _forceRetargetRequested;
     private Renderer[] _cachedRenderers;
     private Collider[] _cachedColliders;
     private Animator[] _cachedAnimators;
@@ -84,10 +86,14 @@ public class Unit : GameBehaviour
     public Hitbox Hitbox { get; private set; }
     public UnitState CurrentUnitState => _currentUnitState;
     public bool IsHero => isHero;
+    public bool IsSupportHealerUnit => Stats != null && Stats.isSupportHealer;
     public UnitType PrimaryUnitType => ResolveStatsAsset() != null ? ResolveStatsAsset().PrimaryUnitType : UnitType.other;
     public UnitStats StatsAsset => ResolveStatsAsset();
     public bool IsDead => Hitbox != null && Hitbox.IsDead;
     public Collider CollisionCollider => _collisionCollider;
+    public Hitbox CurrentCombatTarget => _currentCombatTarget;
+    public bool IsInAttackSequence => _hasPendingAttackImpact || _attackStopTimer > 0f || _timeSinceLastAttackPerformed < 0.35f;
+    public bool HasAttackedRecently(float seconds) => _timeSinceLastAttackPerformed < Mathf.Max(0f, seconds);
     protected UnitStats Stats => Hitbox != null ? Hitbox.unitStats : null;
     public event Action<Unit> OnUnitDied;
     public event Action<Unit> OnUnitRespawned;
@@ -172,6 +178,11 @@ public class Unit : GameBehaviour
         _controllerMoveInput = Vector3.zero;
     }
 
+    protected virtual bool CanPhaseThroughUnits()
+    {
+        return false;
+    }
+
     public virtual void AssignTeam(TeamManager team)
     {
         Team = team;
@@ -185,13 +196,39 @@ public class Unit : GameBehaviour
 
     public void SetState(UnitState state)
     {
+        if (IsSupportHealerUnit && state == UnitState.raidEnemies)
+        {
+            state = UnitState.defendBase;
+        }
+
         if (_currentUnitState == state)
         {
             return;
         }
 
         _currentUnitState = state;
+        if (state != UnitState.defendBase)
+        {
+            _forcedRetreatToBase = false;
+        }
+
         CancelCombatIntent();
+    }
+
+    public void ForceRetreatToBase()
+    {
+        if (_currentUnitState != UnitState.defendBase)
+        {
+            return;
+        }
+
+        _forcedRetreatToBase = true;
+        CancelCombatIntent();
+    }
+
+    public void RequestForceRetarget()
+    {
+        _forceRetargetRequested = true;
     }
 
     public virtual void SetControllerMoveInput(Vector3 moveDirection)
@@ -221,13 +258,26 @@ public class Unit : GameBehaviour
             return Vector3.zero;
         }
 
+        if (_forcedRetreatToBase)
+        {
+            if (HasReturnedCloseToCity())
+            {
+                _forcedRetreatToBase = false;
+            }
+            else
+            {
+                CancelCombatIntent();
+                return GetRetreatMoveDirection();
+            }
+        }
+
         if (ShouldRetreatForCurrentState())
         {
             CancelCombatIntent();
             return GetRetreatMoveDirection();
         }
 
-        if (_currentUnitState == UnitState.followPlayer && HasValidCombatTarget() && !IsFollowCombatTargetAllowed(_currentCombatTarget))
+        if (!IsSupportHealerUnit && _currentUnitState == UnitState.followPlayer && HasValidCombatTarget() && !IsFollowCombatTargetAllowed(_currentCombatTarget))
         {
             CancelCombatIntent();
             return GetRetreatMoveDirection();
@@ -235,7 +285,7 @@ public class Unit : GameBehaviour
 
         if (HasValidCombatTarget())
         {
-            return GetDirectionTo(_currentCombatTarget.transform.position);
+            return GetCombatMoveDirection(_currentCombatTarget);
         }
 
         switch (_currentUnitState)
@@ -253,6 +303,12 @@ public class Unit : GameBehaviour
             case UnitState.raidEnemies:
                 if (Team.EnemyTeam != null && Team.EnemyTeam.city != null)
                 {
+                    Hitbox raidTarget = Team.EnemyTeam.city.Hitbox;
+                    if (raidTarget != null)
+                    {
+                        return GetCombatMoveDirection(raidTarget);
+                    }
+
                     return GetDirectionTo(Team.EnemyTeam.city.transform.position);
                 }
 
@@ -269,6 +325,25 @@ public class Unit : GameBehaviour
             return;
         }
 
+        if (IsSupportHealerUnit)
+        {
+            TickSupportHealing();
+            return;
+        }
+
+        if (_forcedRetreatToBase)
+        {
+            if (HasReturnedCloseToCity())
+            {
+                _forcedRetreatToBase = false;
+            }
+            else
+            {
+                CancelCombatIntent();
+                return;
+            }
+        }
+
         if (ShouldRetreatForCurrentState())
         {
             CancelCombatIntent();
@@ -281,23 +356,52 @@ public class Unit : GameBehaviour
             return;
         }
 
+        if (HasValidCombatTarget() && !IsCurrentCombatTargetWithinAggroWindow(_currentCombatTarget))
+        {
+            ClearCombatTarget();
+        }
+
         float detectionRange = _currentUnitState == UnitState.raidEnemies ? Stats.detectionRaidRange : Stats.detectionDefenseRange;
         if (isHero)
         {
             detectionRange = Mathf.Max(detectionRange, Stats.aggroRange);
+        }
+        detectionRange = GetEffectiveEnemyDetectionRange(detectionRange);
+
+        Hitbox preferredTarget = null;
+        if (_forceRetargetRequested)
+        {
+            preferredTarget = FindPriorityRetargetTarget(detectionRange);
+        }
+        else if (!HasValidCombatTarget() || isHero)
+        {
+            preferredTarget = GetPreferredCombatTarget(detectionRange);
         }
 
         if (!HasValidCombatTarget())
         {
             if (CanAcquireCombatTargetForCurrentState())
             {
-                Hitbox nextTarget = FindNearestEnemyTarget(detectionRange);
-                if (_currentUnitState != UnitState.followPlayer || IsFollowCombatTargetAllowed(nextTarget))
+                if (preferredTarget == null && _currentUnitState == UnitState.raidEnemies && Team.EnemyTeam != null && Team.EnemyTeam.city != null)
                 {
-                    _currentCombatTarget = nextTarget;
+                    preferredTarget = Team.EnemyTeam.city.Hitbox;
+                }
+
+                if (_currentUnitState != UnitState.followPlayer || IsFollowCombatTargetAllowed(preferredTarget))
+                {
+                    _currentCombatTarget = preferredTarget;
                 }
             }
         }
+        else if ((_forceRetargetRequested || isHero) && ShouldReplaceCurrentCombatTarget(preferredTarget))
+        {
+            if (_currentUnitState != UnitState.followPlayer || IsFollowCombatTargetAllowed(preferredTarget))
+            {
+                _currentCombatTarget = preferredTarget;
+            }
+        }
+
+        _forceRetargetRequested = false;
 
         Hitbox target = _currentCombatTarget;
         if (target == null)
@@ -318,6 +422,183 @@ public class Unit : GameBehaviour
 
         _attackCooldownTimer = Mathf.Max(0.1f, Stats.attackCooldown);
         PerformAttack(target);
+    }
+
+    private void TickSupportHealing()
+    {
+        if (ShouldRetreatForCurrentState())
+        {
+            CancelCombatIntent();
+            return;
+        }
+
+        float detectionRange = Mathf.Max(Stats.aggroRange, Stats.detectionDefenseRange);
+        if (!HasValidCombatTarget())
+        {
+            if (CanAcquireCombatTargetForCurrentState())
+            {
+                _currentCombatTarget = FindNearestAlliedHealTarget(detectionRange);
+            }
+        }
+
+        Hitbox target = _currentCombatTarget;
+        if (target == null)
+        {
+            return;
+        }
+
+        float distanceToSurface = GetDistanceToTargetSurface(target);
+        if (distanceToSurface > Stats.range)
+        {
+            return;
+        }
+
+        if (_attackCooldownTimer > 0f)
+        {
+            return;
+        }
+
+        _attackCooldownTimer = Mathf.Max(0.1f, Stats.supportHealCooldown);
+        PerformAttack(target);
+    }
+
+    private bool ShouldReplaceCurrentCombatTarget(Hitbox preferredTarget)
+    {
+        if (preferredTarget == null || preferredTarget == _currentCombatTarget || !HasValidCombatTarget())
+        {
+            return false;
+        }
+
+        float currentDistance = GetDistanceToTargetSurface(_currentCombatTarget);
+        float preferredDistance = GetDistanceToTargetSurface(preferredTarget);
+        bool currentInRange = currentDistance <= Stats.range;
+        bool preferredInRange = preferredDistance <= Stats.range;
+
+        if (preferredInRange && !currentInRange)
+        {
+            return true;
+        }
+
+        if (_currentCombatTarget.OwnerBuild != null && preferredTarget.OwnerUnit != null)
+        {
+            return true;
+        }
+
+        return preferredDistance + 0.35f < currentDistance;
+    }
+
+    private Hitbox GetPreferredCombatTarget(float detectionRange)
+    {
+        Hitbox sharedTarget = GetSharedCombatTarget();
+        if (sharedTarget != null)
+        {
+            return sharedTarget;
+        }
+
+        return FindNearestEnemyTarget(detectionRange);
+    }
+
+    private Hitbox FindPriorityRetargetTarget(float detectionRange)
+    {
+        Hitbox bestCombatUnit = null;
+        Hitbox bestPeasant = null;
+        Hitbox bestBuild = null;
+        float bestCombatUnitDistance = float.MaxValue;
+        float bestPeasantDistance = float.MaxValue;
+        float bestBuildDistance = float.MaxValue;
+
+        IReadOnlyList<Hitbox> hitboxes = Hitbox.ActiveHitboxes;
+        float maxRangeSqr = detectionRange * detectionRange;
+        for (int i = 0; i < hitboxes.Count; i++)
+        {
+            Hitbox candidate = hitboxes[i];
+            if (!IsTargetCandidateValid(candidate))
+            {
+                continue;
+            }
+
+            Vector3 delta = GetFlatDelta(candidate.transform.position);
+            float sqrDistance = delta.sqrMagnitude;
+            if (sqrDistance > maxRangeSqr)
+            {
+                continue;
+            }
+
+            if (candidate.OwnerUnit != null)
+            {
+                if (candidate.OwnerUnit is Peasant)
+                {
+                    if (sqrDistance < bestPeasantDistance)
+                    {
+                        bestPeasantDistance = sqrDistance;
+                        bestPeasant = candidate;
+                    }
+                }
+                else
+                {
+                    if (sqrDistance < bestCombatUnitDistance)
+                    {
+                        bestCombatUnitDistance = sqrDistance;
+                        bestCombatUnit = candidate;
+                    }
+                }
+            }
+            else if (candidate.OwnerBuild != null && sqrDistance < bestBuildDistance)
+            {
+                bestBuildDistance = sqrDistance;
+                bestBuild = candidate;
+            }
+        }
+
+        return bestCombatUnit ?? bestPeasant ?? bestBuild;
+    }
+
+    private Hitbox GetSharedCombatTarget()
+    {
+        if (Team == null || isHero || IsSupportHealerUnit || StatsAsset == null)
+        {
+            return null;
+        }
+
+        return Team.GetSharedCombatTarget(this);
+    }
+
+    private bool IsCurrentCombatTargetWithinAggroWindow(Hitbox target)
+    {
+        if (!IsCombatTargetValid(target) || Stats == null)
+        {
+            return false;
+        }
+
+        if (_currentUnitState == UnitState.followPlayer)
+        {
+            return IsFollowCombatTargetAllowed(target);
+        }
+
+        if (_currentUnitState == UnitState.raidEnemies)
+        {
+            return IsTargetWithinRangeOfPosition(target, transform.position, GetEffectiveEnemyDetectionRange(Stats.detectionRaidRange));
+        }
+
+        if (_currentUnitState == UnitState.defendBase)
+        {
+            return IsTargetWithinRangeOfPosition(target, transform.position, GetEffectiveEnemyDetectionRange(Stats.detectionDefenseRange));
+        }
+
+        return true;
+    }
+
+    private bool IsTargetWithinRangeOfPosition(Hitbox target, Vector3 originPosition, float range)
+    {
+        Vector3 delta = target.transform.position - originPosition;
+        delta.y = 0f;
+        float resolvedRange = Mathf.Max(0.1f, range);
+        return delta.sqrMagnitude <= resolvedRange * resolvedRange;
+    }
+
+    private float GetEffectiveEnemyDetectionRange(float configuredRange)
+    {
+        return Mathf.Max(0.5f, configuredRange * 0.5f);
     }
 
     protected virtual void PerformAttack(Hitbox target)
@@ -403,9 +684,9 @@ public class Unit : GameBehaviour
         ApplyAttackImpact(target, damages, damageType, projectilePrefab, projectileSpeed);
     }
 
-    private void ApplyAttackImpact(Hitbox target, int damages, Hitbox.DamageTypes damageType, GameObject projectilePrefab, float projectileSpeed)
+    protected virtual void ApplyAttackImpact(Hitbox target, int damages, Hitbox.DamageTypes damageType, GameObject projectilePrefab, float projectileSpeed)
     {
-        if (target == null || target.IsDead)
+        if (!IsCombatTargetValid(target))
         {
             return;
         }
@@ -416,6 +697,17 @@ public class Unit : GameBehaviour
         }
         _currentCombatTarget = target;
         _combatElapsedWithoutHit = 0f;
+
+        if (IsSupportHealerUnit)
+        {
+            int healAmount = GetSupportHealAmount(target);
+            if (healAmount > 0)
+            {
+                target.Heal(healAmount);
+            }
+
+            return;
+        }
 
         if (projectilePrefab != null)
         {
@@ -460,43 +752,160 @@ public class Unit : GameBehaviour
             return null;
         }
 
-        float bestDistance = maxRange * maxRange;
-        Hitbox bestTarget = null;
+        float maxRangeSqr = maxRange * maxRange;
+        float bestCombatUnitDistance = maxRangeSqr;
+        float bestPeasantDistance = maxRangeSqr;
+        float bestBuildDistance = maxRangeSqr;
+        Hitbox bestCombatUnit = null;
+        Hitbox bestPeasant = null;
+        Hitbox bestBuild = null;
 
-        Hitbox[] hitboxes = FindObjectsOfType<Hitbox>(true);
-        for (int i = 0; i < hitboxes.Length; i++)
+        IReadOnlyList<Hitbox> hitboxes = Hitbox.ActiveHitboxes;
+        for (int i = 0; i < hitboxes.Count; i++)
         {
             Hitbox target = hitboxes[i];
-            if (target == null || target.IsDead || target.teamID == Hitbox.teamID)
+            if (!IsTargetCandidateValid(target))
             {
                 continue;
             }
 
-            if (!target.gameObject.activeInHierarchy)
-            {
-                continue;
-            }
-
-            if (target.OwnerUnit != null && !target.OwnerUnit.gameObject.activeInHierarchy)
-            {
-                continue;
-            }
-
-            if (target.OwnerBuild != null && !target.OwnerBuild.gameObject.activeInHierarchy)
+            if (target.OwnerUnit is Peasant && Stats != null && !Stats.canFocusEnemyPeasants)
             {
                 continue;
             }
 
             Vector3 delta = GetFlatDelta(target.transform.position);
             float sqrDistance = delta.sqrMagnitude;
+            if (target.OwnerUnit != null)
+            {
+                if (target.OwnerUnit is Peasant)
+                {
+                    if (sqrDistance < bestPeasantDistance)
+                    {
+                        bestPeasantDistance = sqrDistance;
+                        bestPeasant = target;
+                    }
+                }
+                else if (sqrDistance < bestCombatUnitDistance)
+                {
+                    bestCombatUnitDistance = sqrDistance;
+                    bestCombatUnit = target;
+                }
+            }
+            else if (target.OwnerBuild != null && sqrDistance < bestBuildDistance)
+            {
+                bestBuildDistance = sqrDistance;
+                bestBuild = target;
+            }
+        }
+
+        return bestCombatUnit ?? bestPeasant ?? bestBuild;
+    }
+
+    protected virtual Hitbox FindNearestAlliedHealTarget(float maxRange)
+    {
+        if (Hitbox == null)
+        {
+            return null;
+        }
+
+        float bestDistance = maxRange * maxRange;
+        Hitbox bestTarget = null;
+
+        IReadOnlyList<Hitbox> hitboxes = Hitbox.ActiveHitboxes;
+        for (int i = 0; i < hitboxes.Count; i++)
+        {
+            Hitbox candidate = hitboxes[i];
+            if (!IsSupportHealTargetValid(candidate))
+            {
+                continue;
+            }
+
+            Vector3 delta = GetFlatDelta(candidate.transform.position);
+            float sqrDistance = delta.sqrMagnitude;
             if (sqrDistance < bestDistance)
             {
                 bestDistance = sqrDistance;
-                bestTarget = target;
+                bestTarget = candidate;
             }
         }
 
         return bestTarget;
+    }
+
+    protected virtual bool IsTargetCandidateValid(Hitbox target)
+    {
+        if (target == null || target == Hitbox || target.IsDead || target.teamID == Hitbox.teamID)
+        {
+            return false;
+        }
+
+        if (!target.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (target.OwnerUnit != null && (!target.OwnerUnit.gameObject.activeInHierarchy || target.OwnerUnit.IsDead))
+        {
+            return false;
+        }
+
+        if (target.OwnerBuild != null && !target.OwnerBuild.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected virtual bool IsCombatTargetValid(Hitbox target)
+    {
+        if (IsSupportHealerUnit)
+        {
+            return IsSupportHealTargetValid(target);
+        }
+
+        return IsTargetCandidateValid(target);
+    }
+
+    protected virtual bool IsSupportHealTargetValid(Hitbox target)
+    {
+        if (target == null || target == Hitbox || target.IsDead || target.teamID != Hitbox.teamID)
+        {
+            return false;
+        }
+
+        if (!target.gameObject.activeInHierarchy || target.OwnerUnit == null || target.OwnerUnit == this)
+        {
+            return false;
+        }
+
+        if (target.OwnerUnit.IsDead || !target.OwnerUnit.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (target.unitStats == null || target.CurrentHp >= target.unitStats.health)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected virtual int GetSupportHealAmount(Hitbox target)
+    {
+        if (!IsSupportHealerUnit || target == null || target.OwnerUnit == null || Stats == null)
+        {
+            return 0;
+        }
+
+        bool targetIsOutOfCombat = target.OwnerUnit.IsOutOfCombat(Stats.supportCombatGraceDuration);
+        int configuredHeal = targetIsOutOfCombat
+            ? Stats.supportHealOutOfCombat
+            : Stats.supportHealInCombat;
+
+        return Mathf.Max(0, configuredHeal);
     }
 
     protected virtual Vector3 GetDefendAnchor()
@@ -566,6 +975,64 @@ public class Unit : GameBehaviour
             transform.rotation,
             Quaternion.LookRotation(normalizedDirection, Vector3.up),
             Time.deltaTime * 12f);
+    }
+
+    private Vector3 GetCombatMoveDirection(Hitbox target)
+    {
+        if (!IsCombatTargetValid(target))
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 approachPoint = GetCombatApproachPoint(target, out float stoppingDistance);
+        return GetDirectionTo(approachPoint, stoppingDistance);
+    }
+
+    private Vector3 GetCombatApproachPoint(Hitbox target, out float stoppingDistance)
+    {
+        stoppingDistance = Mathf.Max(0.12f, GetStoppingDistance() * 0.35f);
+        if (target == null)
+        {
+            return transform.position;
+        }
+
+        float targetRadius = GetTargetSurfaceRadius(target);
+        bool isRanged = Stats != null && Stats.range > 1.6f;
+        float desiredRadius = isRanged
+            ? Mathf.Max(targetRadius + 0.65f, Stats.range * 0.9f)
+            : Mathf.Max(targetRadius + 0.3f, GetStoppingDistance() + targetRadius);
+
+        if (Team != null)
+        {
+            return Team.GetCombatApproachPoint(this, target, desiredRadius);
+        }
+
+        Vector3 fallbackDirection = transform.position - target.transform.position;
+        fallbackDirection.y = 0f;
+        if (fallbackDirection.sqrMagnitude <= 0.0001f)
+        {
+            float fallbackAngle = Mathf.Abs(GetInstanceID() % 360) * Mathf.Deg2Rad;
+            fallbackDirection = new Vector3(Mathf.Cos(fallbackAngle), 0f, Mathf.Sin(fallbackAngle));
+        }
+
+        return target.transform.position + fallbackDirection.normalized * desiredRadius;
+    }
+
+    private float GetTargetSurfaceRadius(Hitbox target)
+    {
+        if (target == null)
+        {
+            return 0.75f;
+        }
+
+        Collider targetCollider = target.GetComponent<Collider>();
+        if (targetCollider == null)
+        {
+            return 0.75f;
+        }
+
+        Bounds bounds = targetCollider.bounds;
+        return Mathf.Max(0.5f, Mathf.Max(bounds.extents.x, bounds.extents.z));
     }
 
     protected virtual Vector3 GetProjectileSpawnPosition()
@@ -855,6 +1322,11 @@ public class Unit : GameBehaviour
                 }
 
                 Unit blockingUnit = hit.collider.GetComponentInParent<Unit>();
+                if (blockingUnit != null && blockingUnit != this && CanPhaseThroughUnits())
+                {
+                    return desiredDisplacement;
+                }
+
                 if (blockingUnit != null && blockingUnit != this && blockingUnit.Team == Team)
                 {
                     return desiredDisplacement;
@@ -1132,6 +1604,11 @@ public class Unit : GameBehaviour
             return Vector3.zero;
         }
 
+        if (CanPhaseThroughUnits())
+        {
+            return Vector3.zero;
+        }
+
         GetCapsuleWorldPoints(transform.position, out Vector3 point1, out Vector3 point2, out float radius);
         Collider[] overlaps = Physics.OverlapCapsule(point1, point2, radius * 1.8f, ~0, QueryTriggerInteraction.Ignore);
         Vector3 avoidance = Vector3.zero;
@@ -1228,6 +1705,18 @@ public class Unit : GameBehaviour
         return builder.ToString().Trim();
     }
 
+    public bool IsOutOfCombat(float thresholdSeconds)
+    {
+        float threshold = Mathf.Max(0f, thresholdSeconds);
+        return _timeSinceLastReceivedDamage >= threshold && _timeSinceLastAttackPerformed >= threshold;
+    }
+
+    protected void MarkReceivedDamage()
+    {
+        _timeSinceLastReceivedDamage = 0f;
+        _regenTickTimer = 0f;
+    }
+
     protected virtual void HandleHitboxDeath(Hitbox hitbox)
     {
         ClearMovementPath();
@@ -1251,9 +1740,7 @@ public class Unit : GameBehaviour
 
     protected bool HasValidCombatTarget()
     {
-        return _currentCombatTarget != null &&
-               !_currentCombatTarget.IsDead &&
-               _currentCombatTarget.teamID != Hitbox.teamID;
+        return IsCombatTargetValid(_currentCombatTarget);
     }
 
     protected void CancelCombatIntent()
@@ -1299,6 +1786,17 @@ public class Unit : GameBehaviour
             default:
                 return Vector3.zero;
         }
+    }
+
+    private bool HasReturnedCloseToCity()
+    {
+        if (Team == null)
+        {
+            return true;
+        }
+
+        float safeDistance = Stats == null ? 3f : Mathf.Max(2.5f, Stats.defendAnchorDistance * 0.6f);
+        return GetFlatDelta(Team.BasePosition).sqrMagnitude <= safeDistance * safeDistance;
     }
 
     private bool CanAcquireCombatTargetForCurrentState()
@@ -1360,6 +1858,11 @@ public class Unit : GameBehaviour
             return false;
         }
 
+        if (_forcedRetreatToBase)
+        {
+            return true;
+        }
+
         if (_currentUnitState == UnitState.followPlayer)
         {
             Unit hero = Team.GetHeroUnit();
@@ -1374,6 +1877,11 @@ public class Unit : GameBehaviour
 
         if (_currentUnitState == UnitState.defendBase)
         {
+            if (HasValidCombatTarget())
+            {
+                return false;
+            }
+
             float leashDistance = Mathf.Max(Stats.defendAnchorDistance + 2f, Stats.defendLeashDistance);
             return GetFlatDelta(Team.BasePosition).sqrMagnitude > leashDistance * leashDistance;
         }
@@ -1383,7 +1891,12 @@ public class Unit : GameBehaviour
 
     protected virtual void HandleHitboxDamaged(Hitbox.DamageContext damageContext)
     {
-        _timeSinceLastReceivedDamage = 0f;
+        MarkReceivedDamage();
+
+        if (IsSupportHealerUnit)
+        {
+            return;
+        }
 
         Hitbox attacker = damageContext.sourceHitbox;
         if (attacker == null || attacker == Hitbox || attacker.IsDead || attacker.teamID == Hitbox.teamID)
@@ -1534,14 +2047,14 @@ public class WolfUnit : Unit
             return null;
         }
 
-        Hitbox[] hitboxes = FindObjectsOfType<Hitbox>(true);
+        IReadOnlyList<Hitbox> hitboxes = Hitbox.ActiveHitboxes;
         float bestDistance = maxRange * maxRange;
         Hitbox bestTarget = null;
 
-        for (int i = 0; i < hitboxes.Length; i++)
+        for (int i = 0; i < hitboxes.Count; i++)
         {
             Hitbox candidate = hitboxes[i];
-            if (candidate == null || candidate == Hitbox || candidate.IsDead || candidate.teamID == NeutralTeamId)
+            if (!IsTargetCandidateValid(candidate) || candidate.teamID == NeutralTeamId)
             {
                 continue;
             }

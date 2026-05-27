@@ -11,6 +11,7 @@ public class Hitbox : GameBehaviour
     private static readonly Color PlayerHpBarColor = new Color32(0x00, 0xFF, 0x53, 0xFF);
     private static readonly Color EnemyHpBarColor = new Color32(0xCF, 0x24, 0x30, 0xFF);
     private static GameObject _cachedHpBarPrefab;
+    private static readonly List<Hitbox> ActiveHitboxesInternal = new List<Hitbox>();
 
     public struct DamageContext
     {
@@ -45,17 +46,31 @@ public class Hitbox : GameBehaviour
     public event Action<Hitbox> OnDeath;
     public event Action<DamageContext> OnDamaged;
 
+    public static IReadOnlyList<Hitbox> ActiveHitboxes => ActiveHitboxesInternal;
+    public static int ActiveCount => ActiveHitboxesInternal.Count;
     public int CurrentHp => _currentHp;
     public bool IsDead => _isDead;
     public TeamManager OwnerTeam { get; private set; }
     public Unit OwnerUnit { get; private set; }
     public Build OwnerBuild { get; private set; }
 
+    private void Awake()
+    {
+        OwnerUnit = GetComponent<Unit>();
+        OwnerBuild = GetComponent<Build>();
+    }
+
+    private void OnEnable()
+    {
+        if (!ActiveHitboxesInternal.Contains(this))
+        {
+            ActiveHitboxesInternal.Add(this);
+        }
+    }
+
     private void Start()
     {
         _currentHp = unitStats == null ? 1 : unitStats.health;
-        OwnerUnit = GetComponent<Unit>();
-        OwnerBuild = GetComponent<Build>();
 
         TeamManager parentTeam = GetComponentInParent<TeamManager>();
         if (parentTeam != null)
@@ -78,11 +93,17 @@ public class Hitbox : GameBehaviour
 
     private void OnDestroy()
     {
+        ActiveHitboxesInternal.Remove(this);
         if (_hpBarInstance != null)
         {
             Destroy(_hpBarInstance);
             _hpBarInstance = null;
         }
+    }
+
+    private void OnDisable()
+    {
+        ActiveHitboxesInternal.Remove(this);
     }
 
     public void AssignTeam(TeamManager team)
@@ -245,14 +266,14 @@ public class Hitbox : GameBehaviour
                 hpBarRect.localPosition = new Vector3(0f, defaultHpBarHeight, 0f);
             }
 
-            hpBarRect.localRotation = Quaternion.identity;
+            hpBarRect.localRotation = Quaternion.Euler(0f, 180f, 0f);
         }
         else
         {
             _hpBarInstance.transform.localPosition = hpBarAnchor != transform
                 ? Vector3.zero
                 : new Vector3(0f, defaultHpBarHeight, 0f);
-            _hpBarInstance.transform.localRotation = Quaternion.identity;
+            _hpBarInstance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
         }
 
         _hpBarFill = FindHpBarFill(_hpBarInstance);

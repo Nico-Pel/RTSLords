@@ -26,6 +26,8 @@ MonoBehaviour:
   range: 5
   damages: 6
   attackCooldown: 1.1
+  faceTargetOnAttack: 0
+  canFocusEnemyPeasants: 0
   attackMoveStopDistance: 0.9
   aggroRange: 8
   detectionRaidRange: 15

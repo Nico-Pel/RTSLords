@@ -1,0 +1,53 @@
+RTSLords Runtime Performance Report
+Generated: 2026-05-27 12:07:38
+Session duration: 328.63s
+Frames captured: 104495
+
+Frame timing
+Average frame: 3.19 ms (313.2 FPS)
+Worst frame: 5022.52 ms (0.2 FPS)
+Best frame: 1.10 ms (905.8 FPS)
+Spike threshold: 25.00 ms
+
+Memory
+Allocated start/end/max: 1109.15 MB / 1052.90 MB / 1109.15 MB
+Reserved start/end/max: 1613.26 MB / 1521.30 MB / 1613.26 MB
+Mono start/end/max: 46.73 MB / 43.38 MB / 52.13 MB
+
+GC collections
+Gen0: 1961
+Gen1: 1961
+Gen2: 1961
+
+Final world counts
+Units: 44
+Builds: 6
+Trees: 225
+Teams: 2
+
+Worst spikes
+1. t=0.02s | 5022.52 ms | alloc=1099.24 MB | reserved=1605.59 MB | mono=46.73 MB | units=8 | builds=2 | trees=300
+2. t=0.26s | 252.69 ms | alloc=1107.15 MB | reserved=1611.21 MB | mono=47.68 MB | units=8 | builds=2 | trees=300
+3. t=226.53s | 95.26 ms | alloc=1052.48 MB | reserved=1553.30 MB | mono=43.77 MB | units=49 | builds=7 | trees=241
+4. t=225.87s | 82.89 ms | alloc=1052.64 MB | reserved=1553.30 MB | mono=43.61 MB | units=48 | builds=7 | trees=241
+5. t=225.27s | 76.33 ms | alloc=1052.64 MB | reserved=1553.30 MB | mono=45.74 MB | units=49 | builds=7 | trees=241
+6. t=226.60s | 73.80 ms | alloc=1052.46 MB | reserved=1553.30 MB | mono=44.75 MB | units=49 | builds=7 | trees=241
+7. t=223.31s | 72.90 ms | alloc=1052.67 MB | reserved=1553.30 MB | mono=43.90 MB | units=49 | builds=7 | trees=241
+8. t=226.67s | 71.47 ms | alloc=1052.45 MB | reserved=1553.30 MB | mono=44.14 MB | units=49 | builds=7 | trees=241
+9. t=225.48s | 70.15 ms | alloc=1052.60 MB | reserved=1553.30 MB | mono=44.97 MB | units=48 | builds=7 | trees=241
+10. t=225.79s | 66.51 ms | alloc=1052.62 MB | reserved=1553.30 MB | mono=43.60 MB | units=48 | builds=7 | trees=241
+11. t=226.12s | 65.61 ms | alloc=1052.63 MB | reserved=1553.30 MB | mono=43.73 MB | units=49 | builds=7 | trees=241
+12. t=226.25s | 65.31 ms | alloc=1052.48 MB | reserved=1553.30 MB | mono=44.05 MB | units=49 | builds=7 | trees=241
+13. t=226.31s | 63.91 ms | alloc=1052.53 MB | reserved=1553.30 MB | mono=43.97 MB | units=49 | builds=7 | trees=241
+14. t=224.53s | 63.75 ms | alloc=1052.62 MB | reserved=1553.30 MB | mono=43.91 MB | units=48 | builds=7 | trees=241
+15. t=226.18s | 63.65 ms | alloc=1052.57 MB | reserved=1553.30 MB | mono=43.59 MB | units=49 | builds=7 | trees=241
+16. t=225.94s | 62.43 ms | alloc=1052.63 MB | reserved=1553.30 MB | mono=43.56 MB | units=48 | builds=7 | trees=241
+17. t=224.41s | 62.40 ms | alloc=1052.57 MB | reserved=1553.30 MB | mono=43.64 MB | units=48 | builds=7 | trees=241
+18. t=225.60s | 62.04 ms | alloc=1052.59 MB | reserved=1553.30 MB | mono=45.43 MB | units=48 | builds=7 | trees=241
+19. t=226.73s | 61.88 ms | alloc=1052.47 MB | reserved=1553.30 MB | mono=44.15 MB | units=49 | builds=7 | trees=241
+20. t=225.66s | 61.63 ms | alloc=1052.59 MB | reserved=1553.30 MB | mono=45.29 MB | units=48 | builds=7 | trees=241
+21. t=225.72s | 61.41 ms | alloc=1052.56 MB | reserved=1553.30 MB | mono=45.85 MB | units=48 | builds=7 | trees=241
+22. t=226.37s | 61.35 ms | alloc=1052.50 MB | reserved=1553.30 MB | mono=43.87 MB | units=49 | builds=7 | trees=241
+23. t=223.37s | 61.26 ms | alloc=1052.69 MB | reserved=1553.30 MB | mono=44.58 MB | units=49 | builds=7 | trees=241
+24. t=224.70s | 61.19 ms | alloc=1052.59 MB | reserved=1553.30 MB | mono=44.00 MB | units=49 | builds=7 | trees=241
+25. t=226.05s | 60.66 ms | alloc=1052.62 MB | reserved=1553.30 MB | mono=43.93 MB | units=48 | builds=7 | trees=241

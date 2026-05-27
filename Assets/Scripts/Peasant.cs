@@ -72,6 +72,20 @@ public class Peasant : Unit
         return HandleWoodHarvest();
     }
 
+    protected override bool CanPhaseThroughUnits()
+    {
+        return true;
+    }
+
+    protected override void TickCombat()
+    {
+    }
+
+    protected override void HandleHitboxDamaged(Hitbox.DamageContext damageContext)
+    {
+        MarkReceivedDamage();
+    }
+
     private void RefreshHarvestAssignment()
     {
         if (_assignedField != null && !_assignedField.gameObject.activeInHierarchy)

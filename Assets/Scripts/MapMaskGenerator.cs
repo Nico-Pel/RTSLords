@@ -57,11 +57,13 @@ public class MapMaskGenerator : MonoBehaviour
     [Header("Terrain")]
     public float worldWidth = 52f;
     public float worldDepth = 52f;
-    public float mapSizeMultiplier = 1.584f;
+    public float mapSizeMultiplier = 1.5f;
     public int terrainResolution = 120;
     public float plateauHeight = 3.8f;
+    public float visualCliffHeightMultiplier = 0.5f;
     public float slopeWidth = 2.4f;
-    public float outerBlackBorderWorldSize = 5f;
+    public float outerBlackBorderWorldSize = 10f;
+    public float terrainMeshExtensionWorld = 5f;
     public float plateauNoiseHeight = 0.22f;
     public float slopeNoiseStrength = 0.4f;
     public int blockerResolution = 56;
@@ -93,16 +95,16 @@ public class MapMaskGenerator : MonoBehaviour
     public float treeJitter = 0.7f;
     public float treeSpawnChance = 1f;
     public float treeExclusionRadius = 2.2f;
-    public float cityTreeExclusionRadius = 5.5f;
+    public float cityTreeExclusionRadius = 10f;
     public float buildZoneTreeExclusionRadius = 6.25f;
     public float minTreeDistance = 0.5f;
     public float minCliffDistance = 0.5f;
     public int maxTreeCount = 300;
-    public int denseForestTreeCountPerZone = 70;
-    public float denseForestSpawnRadius = 5.5f;
-    public float denseForestCityExclusionRadius = 2.35f;
-    public float denseForestBuildZoneExclusionRadius = 3f;
-    public float denseForestMinCliffDistance = 0.1f;
+    public int guaranteedCityForestTreeCount = 70;
+    public float guaranteedCityForestMinDistanceFromCity = 5f;
+    public float guaranteedCityForestMaxDistanceFromCity = 12f;
+    public float guaranteedCityForestSpreadAngle = 80f;
+    public float guaranteedCityForestCliffClearRadius = 4f;
     public int neighborSpawnChecksPerTree = 2;
     public float neighborSpawnRadiusMin = 0.5f;
     public float neighborSpawnRadiusMax = 1.35f;
@@ -117,6 +119,10 @@ public class MapMaskGenerator : MonoBehaviour
     public float decorationTreeExclusionRadius = 0.8f;
     public float decorationWolfExclusionRadius = 1.2f;
     public float decorationBuildZoneExclusionRadius = 4f;
+    public float minBuildZoneDistanceFromCity = 7f;
+    public float minBuildZoneDistanceFromOtherBuildZones = 7f;
+    public float buildZoneCliffSafetyDistance = 8f;
+    public float buildZoneObstacleCleanupDistance = 3f;
     public float rockBuildZoneCleanupDistance = 3f;
     public float decorationCityExclusionRadius = 4.5f;
     public float heroSpawnExclusionRadius = 4f;
@@ -138,6 +144,8 @@ public class MapMaskGenerator : MonoBehaviour
     private OrientationVariant _resolvedOrientation;
     private System.Random _random;
     private Transform _generatedRoot;
+    private List<GuaranteedForestZone> _guaranteedForestZones = new List<GuaranteedForestZone>();
+    private List<Vector3> _adjustedBuildZonePositions = new List<Vector3>();
     private Vector3 _playerBaseBeforeClear;
     private Vector3 _enemyBaseBeforeClear;
     private Color _playerTeamColorBeforeClear = HumanTeamColor;
@@ -175,10 +183,14 @@ public class MapMaskGenerator : MonoBehaviour
         List<Vector2> cityPixels = ExtractMarkerCentroids(MaskRole.Blue, 1);
         List<Vector2> buildZonePixels = ExtractMarkerCentroids(MaskRole.Red, 1);
         List<Vector2> wolfPixels = ExtractMarkerCentroids(MaskRole.Cyan, 6);
-        List<List<Vector2Int>> denseForestRegions = ExtractMarkerRegions(MaskRole.DenseForest, 1);
         List<Vector3> cityWorldPositions = ConvertPixelsToWorld(cityPixels);
         List<Vector3> buildZoneWorldPositions = ConvertPixelsToWorld(buildZonePixels);
         List<Vector3> wolfWorldPositions = ConvertPixelsToWorld(wolfPixels);
+        AdjustBuildZonePositionsNearCities(buildZoneWorldPositions, cityWorldPositions);
+        _adjustedBuildZonePositions = new List<Vector3>(buildZoneWorldPositions);
+        SnapBuildZoneHeightsToFinalTerrain(buildZoneWorldPositions);
+        _adjustedBuildZonePositions = new List<Vector3>(buildZoneWorldPositions);
+        _guaranteedForestZones = CreateGuaranteedForestZones(cityWorldPositions);
 
         _generatedRoot = new GameObject(GeneratedRootName).transform;
         _generatedRoot.SetParent(transform, false);
@@ -186,10 +198,11 @@ public class MapMaskGenerator : MonoBehaviour
         BuildTerrain();
         BuildObstacleBlockers();
         SpawnBuildZones(buildZoneWorldPositions);
-        SpawnTrees(cityWorldPositions, buildZoneWorldPositions, denseForestRegions);
+        SpawnTrees(cityWorldPositions, buildZoneWorldPositions);
         PositionTeamsAndCities(cityWorldPositions);
         SpawnWolves(wolfWorldPositions);
         SpawnDecorations();
+        CleaningTextures();
     }
 
     [ContextMenu("Clear Generated Map")]
@@ -463,6 +476,8 @@ public class MapMaskGenerator : MonoBehaviour
     {
         float effectiveWorldWidth = GetEffectiveWorldWidth();
         float effectiveWorldDepth = GetEffectiveWorldDepth();
+        float expandedWorldWidth = effectiveWorldWidth + (Mathf.Max(0f, terrainMeshExtensionWorld) * 2f);
+        float expandedWorldDepth = effectiveWorldDepth + (Mathf.Max(0f, terrainMeshExtensionWorld) * 2f);
         int resolution = Mathf.Max(24, terrainResolution);
         int columns = resolution + 1;
         int rows = resolution + 1;
@@ -476,9 +491,9 @@ public class MapMaskGenerator : MonoBehaviour
             for (int x = 0; x < columns; x++)
             {
                 float u = x / (float)resolution;
-                Vector2 sampleUv = GetWarpedMaskUv(new Vector2(u, v));
-                float localX = (u - 0.5f) * effectiveWorldWidth;
-                float localZ = (v - 0.5f) * effectiveWorldDepth;
+                Vector2 sampleUv = GetTerrainMaskUvFromExpandedSurface(u, v);
+                float localX = (u - 0.5f) * expandedWorldWidth;
+                float localZ = (v - 0.5f) * expandedWorldDepth;
                 float localY = SampleHeight(sampleUv);
 
                 int index = x + (z * columns);
@@ -526,8 +541,6 @@ public class MapMaskGenerator : MonoBehaviour
             ? new Material(groundMaterialTemplate)
             : new Material(Shader.Find("Standard"));
 
-        Texture2D generatedTexture = BuildGroundTexture();
-        material.mainTexture = generatedTexture;
         material.mainTextureScale = Vector2.one;
         if (material.HasProperty("_Glossiness"))
         {
@@ -535,6 +548,30 @@ public class MapMaskGenerator : MonoBehaviour
         }
 
         return material;
+    }
+
+    private void CleaningTextures()
+    {
+        if (_generatedRoot == null)
+        {
+            return;
+        }
+
+        Transform terrainTransform = _generatedRoot.Find("Terrain");
+        if (terrainTransform == null)
+        {
+            return;
+        }
+
+        MeshRenderer meshRenderer = terrainTransform.GetComponent<MeshRenderer>();
+        if (meshRenderer == null || meshRenderer.sharedMaterial == null)
+        {
+            return;
+        }
+
+        Texture2D generatedTexture = BuildGroundTexture();
+        meshRenderer.sharedMaterial.mainTexture = generatedTexture;
+        meshRenderer.sharedMaterial.mainTextureScale = Vector2.one;
     }
 
     private Texture2D BuildGroundTexture()
@@ -547,11 +584,11 @@ public class MapMaskGenerator : MonoBehaviour
         Color[] pixels = new Color[resolution * resolution];
         for (int y = 0; y < resolution; y++)
         {
-                float v = y / (float)(resolution - 1);
+            float v = y / (float)(resolution - 1);
             for (int x = 0; x < resolution; x++)
             {
                 float u = x / (float)(resolution - 1);
-                Vector2 sampleUv = GetWarpedMaskUv(new Vector2(u, v));
+                Vector2 sampleUv = GetTerrainMaskUvFromExpandedSurface(u, v);
                 pixels[x + (y * resolution)] = BuildGroundPixelColor(sampleUv, u, v);
             }
         }
@@ -563,19 +600,25 @@ public class MapMaskGenerator : MonoBehaviour
 
     private Color BuildGroundPixelColor(Vector2 sampleUv, float u, float v)
     {
+        bool isGuaranteedForestClearZone = IsInsideGuaranteedForestClearZone(sampleUv);
+        bool isBuildZoneCliffSafetyZone = IsInsideBuildZoneCliffSafetyZone(sampleUv);
+        bool isOutsideMaskBounds = IsOutsideMaskBounds(sampleUv);
         bool isOuterBlackBand = IsOuterBlackBand(sampleUv);
-        MaskRole role = isOuterBlackBand ? MaskRole.Black : GetRoleAtUv(sampleUv);
-        int searchRadiusPixels = Mathf.CeilToInt((slopeWidth / Mathf.Max(0.01f, GetEffectiveWorldWidth())) * _maskWidth) + 3;
-        float distanceToBlack = FindDistanceToRole(sampleUv, MaskRole.Black, searchRadiusPixels);
-        if (isOuterBlackBand)
+        MaskRole role = isGuaranteedForestClearZone || isBuildZoneCliffSafetyZone
+            ? MaskRole.White
+            : isOutsideMaskBounds || isOuterBlackBand
+                ? MaskRole.Black
+                : GetRoleAtUv(sampleUv);
+        float centerHeight = SampleHeight(sampleUv);
+        float maxVisualHeight = Mathf.Max(0.01f, plateauHeight * Mathf.Clamp01(visualCliffHeightMultiplier));
+        float normalizedHeight = centerHeight / maxVisualHeight;
+        float cliffInfluence = 0f;
+        if (role != MaskRole.Black && centerHeight > 0.025f && centerHeight < maxVisualHeight - 0.025f)
         {
-            distanceToBlack = 0f;
+            float lowerBand = Mathf.InverseLerp(0.03f, 0.18f, normalizedHeight);
+            float upperBand = 1f - Mathf.InverseLerp(0.82f, 0.97f, normalizedHeight);
+            cliffInfluence = Mathf.Clamp01(Mathf.Min(lowerBand, upperBand));
         }
-
-        float cliffDistanceWorld = distanceToBlack < 0f ? float.MaxValue : distanceToBlack / PixelsPerWorldUnitX();
-        float cliffInfluence = role == MaskRole.Black
-            ? 0f
-            : Mathf.Clamp01(1f - (cliffDistanceWorld / Mathf.Max(0.01f, slopeWidth)));
 
         float dirtBlendRadiusPixels = Mathf.Max(1f, groundBlendWorldDistance * PixelsPerWorldUnitX());
         float distanceToYellow = FindDistanceToRole(sampleUv, MaskRole.Yellow, Mathf.CeilToInt(dirtBlendRadiusPixels) + 2);
@@ -651,15 +694,14 @@ public class MapMaskGenerator : MonoBehaviour
             {
                 float u = (x + 0.5f) / resolution;
                 Vector2 sampleUv = GetWarpedMaskUv(new Vector2(u, v));
-                float height = SampleHeight(sampleUv);
-                if (height <= 0.05f)
+                if (!IsBlockedTerrainAt(sampleUv))
                 {
                     continue;
                 }
 
                 GameObject blocker = new GameObject($"Blocker_{x}_{z}");
                 blocker.transform.SetParent(blockersRoot.transform, false);
-                float blockerHeight = Mathf.Max(plateauHeight + 1f, height + 1f);
+                float blockerHeight = Mathf.Max(plateauHeight + 1f, SampleTerrainHeight(sampleUv, 1f) + 1f);
                 blocker.transform.localPosition = new Vector3(
                     (u - 0.5f) * effectiveWorldWidth,
                     blockerHeight * 0.5f,
@@ -733,6 +775,11 @@ public class MapMaskGenerator : MonoBehaviour
         Transform flowersRoot = new GameObject("Flowers").transform;
         flowersRoot.SetParent(decorationsRoot.transform, false);
         SpawnFlowerDecorations(flowersRoot, occupiedPositions);
+
+        if (buildZoneObstacleCleanupDistance > 0f)
+        {
+            ClearPropsAroundBuildZones(buildZoneObstacleCleanupDistance);
+        }
     }
 
     private void SpawnRockDecorations(Transform rocksRoot, List<Vector3> occupiedPositions)
@@ -754,7 +801,8 @@ public class MapMaskGenerator : MonoBehaviour
 
             GameObject rockPrefab = rockPrefabs[_random.Next(0, rockPrefabs.Length)];
             Quaternion rotation = Quaternion.Euler(0f, (float)_random.NextDouble() * 360f, 0f);
-            Instantiate(rockPrefab, position, rotation, rocksRoot);
+            GameObject rockInstance = Instantiate(rockPrefab, position, rotation, rocksRoot);
+            EnsureRockObstacle(rockInstance);
             occupiedPositions.Add(position);
             spawnedCount++;
         }
@@ -833,10 +881,70 @@ public class MapMaskGenerator : MonoBehaviour
         }
     }
 
+    private void ClearPropsAroundBuildZones(float cleanupDistance)
+    {
+        if (_generatedRoot == null || cleanupDistance <= 0f)
+        {
+            return;
+        }
+
+        Transform buildZonesRoot = _generatedRoot.Find("BuildZones");
+        if (buildZonesRoot == null || buildZonesRoot.childCount == 0)
+        {
+            return;
+        }
+
+        List<Vector3> buildZonePositions = new List<Vector3>(buildZonesRoot.childCount);
+        for (int i = 0; i < buildZonesRoot.childCount; i++)
+        {
+            buildZonePositions.Add(buildZonesRoot.GetChild(i).position);
+        }
+
+        PruneTreesAroundReservedZones(buildZonePositions, cleanupDistance);
+
+        Transform rocksRoot = _generatedRoot.Find("Decorations/Rocks");
+        if (rocksRoot != null)
+        {
+            PruneRocksAroundPositions(rocksRoot, buildZonePositions, cleanupDistance);
+        }
+    }
+
+    private void PruneRocksAroundPositions(Transform rocksRoot, List<Vector3> positions, float cleanupDistance)
+    {
+        if (rocksRoot == null || positions == null || positions.Count == 0 || cleanupDistance <= 0f)
+        {
+            return;
+        }
+
+        float sqrDistance = cleanupDistance * cleanupDistance;
+        List<GameObject> rocksToDestroy = new List<GameObject>();
+        for (int i = 0; i < rocksRoot.childCount; i++)
+        {
+            Transform rock = rocksRoot.GetChild(i);
+            Vector3 rockPosition = rock.position;
+            rockPosition.y = 0f;
+
+            for (int j = 0; j < positions.Count; j++)
+            {
+                Vector3 zonePosition = positions[j];
+                zonePosition.y = 0f;
+                if ((rockPosition - zonePosition).sqrMagnitude <= sqrDistance)
+                {
+                    rocksToDestroy.Add(rock.gameObject);
+                    break;
+                }
+            }
+        }
+
+        for (int i = 0; i < rocksToDestroy.Count; i++)
+        {
+            DestroyNow(rocksToDestroy[i]);
+        }
+    }
+
     private void SpawnTrees(
         List<Vector3> cityWorldPositions,
-        List<Vector3> buildZoneWorldPositions,
-        List<List<Vector2Int>> denseForestRegions)
+        List<Vector3> buildZoneWorldPositions)
     {
         if (treePrefabs == null || treePrefabs.Length == 0)
         {
@@ -853,7 +961,7 @@ public class MapMaskGenerator : MonoBehaviour
             for (int i = 0; i < cityWorldPositions.Count; i++)
             {
                 blockedZones.Add(new ReservedSpawnZone(cityWorldPositions[i], cityTreeExclusionRadius));
-                denseForestBlockedZones.Add(new ReservedSpawnZone(cityWorldPositions[i], denseForestCityExclusionRadius));
+                denseForestBlockedZones.Add(new ReservedSpawnZone(cityWorldPositions[i], Mathf.Max(cityTreeExclusionRadius, guaranteedCityForestMinDistanceFromCity)));
             }
         }
 
@@ -862,7 +970,7 @@ public class MapMaskGenerator : MonoBehaviour
             for (int i = 0; i < buildZoneWorldPositions.Count; i++)
             {
                 blockedZones.Add(new ReservedSpawnZone(buildZoneWorldPositions[i], buildZoneTreeExclusionRadius));
-                denseForestBlockedZones.Add(new ReservedSpawnZone(buildZoneWorldPositions[i], denseForestBuildZoneExclusionRadius));
+                denseForestBlockedZones.Add(new ReservedSpawnZone(buildZoneWorldPositions[i], 3f));
             }
         }
 
@@ -875,7 +983,7 @@ public class MapMaskGenerator : MonoBehaviour
         Queue<Vector3> frontier = new Queue<Vector3>();
         int targetTreeCount = Mathf.Max(0, maxTreeCount);
 
-        SpawnDenseForestTrees(denseForestRegions, treeRoot.transform, denseForestBlockedZones, spawnedTreePositions, targetTreeCount);
+        SpawnGuaranteedCityForestTrees(treeRoot.transform, denseForestBlockedZones, spawnedTreePositions, targetTreeCount);
         if (spawnedTreePositions.Count >= targetTreeCount)
         {
             return;
@@ -952,41 +1060,39 @@ public class MapMaskGenerator : MonoBehaviour
                 SpawnTreeInstance(randomGreenPosition, treeRoot.transform, spawnedTreePositions, frontier);
             }
         }
+
+        if (cityWorldPositions != null && cityWorldPositions.Count > 0)
+        {
+            PruneTreesAroundReservedZones(cityWorldPositions, cityTreeExclusionRadius);
+        }
     }
 
-    private void SpawnDenseForestTrees(
-        List<List<Vector2Int>> denseForestRegions,
+    private void SpawnGuaranteedCityForestTrees(
         Transform treeRoot,
         List<ReservedSpawnZone> blockedZones,
         List<Vector3> spawnedTreePositions,
         int totalTreeBudget)
     {
-        if (denseForestRegions == null || denseForestRegions.Count == 0)
+        if (_guaranteedForestZones == null || _guaranteedForestZones.Count == 0)
         {
             return;
         }
 
-        int treesPerZone = Mathf.Max(0, denseForestTreeCountPerZone);
+        int treesPerZone = Mathf.Max(0, guaranteedCityForestTreeCount);
         if (treesPerZone <= 0)
         {
             return;
         }
 
-        Queue<Vector3> denseFrontier = new Queue<Vector3>();
-        for (int regionIndex = 0; regionIndex < denseForestRegions.Count; regionIndex++)
+        Queue<Vector3> forestFrontier = new Queue<Vector3>();
+        for (int zoneIndex = 0; zoneIndex < _guaranteedForestZones.Count; zoneIndex++)
         {
             if (spawnedTreePositions.Count >= totalTreeBudget)
             {
                 break;
             }
 
-            List<Vector2Int> region = denseForestRegions[regionIndex];
-            if (region == null || region.Count == 0)
-            {
-                continue;
-            }
-
-            Vector3 regionCenter = GetDenseForestRegionCenter(region);
+            GuaranteedForestZone zone = _guaranteedForestZones[zoneIndex];
             int spawnedInRegion = 0;
             int remainingBudget = Mathf.Max(0, totalTreeBudget - spawnedTreePositions.Count);
             int targetForRegion = Mathf.Min(treesPerZone, remainingBudget);
@@ -998,22 +1104,22 @@ public class MapMaskGenerator : MonoBehaviour
             int attemptBudget = Mathf.Max(treesPerZone * 220, 8000);
             for (int attempt = 0; attempt < attemptBudget && spawnedInRegion < targetForRegion; attempt++)
             {
-                Vector3 candidate = FindDenseForestCandidatePosition(regionCenter, denseFrontier, spawnedInRegion > 0);
-                if (!CanSpawnDenseForestTreeAt(candidate, blockedZones, spawnedTreePositions))
+                Vector3 candidate = FindGuaranteedForestCandidatePosition(zone, forestFrontier, spawnedInRegion > 0);
+                if (!CanSpawnGuaranteedForestTreeAt(candidate, zone, blockedZones, spawnedTreePositions))
                 {
                     continue;
                 }
 
-                SpawnTreeInstance(candidate, treeRoot, spawnedTreePositions, denseFrontier);
+                SpawnTreeInstance(candidate, treeRoot, spawnedTreePositions, forestFrontier);
                 spawnedInRegion++;
             }
 
             if (spawnedInRegion < targetForRegion)
             {
-                Debug.LogWarning($"Dense forest zone {regionIndex + 1} could only place {spawnedInRegion}/{targetForRegion} trees.");
+                Debug.LogWarning($"Guaranteed city forest zone {zoneIndex + 1} could only place {spawnedInRegion}/{targetForRegion} trees.");
             }
 
-            denseFrontier.Clear();
+            forestFrontier.Clear();
         }
     }
 
@@ -1169,8 +1275,9 @@ public class MapMaskGenerator : MonoBehaviour
         return true;
     }
 
-    private bool CanSpawnDenseForestTreeAt(
+    private bool CanSpawnGuaranteedForestTreeAt(
         Vector3 worldPosition,
+        GuaranteedForestZone forestZone,
         List<ReservedSpawnZone> blockedZones,
         List<Vector3> spawnedTreePositions)
     {
@@ -1182,12 +1289,17 @@ public class MapMaskGenerator : MonoBehaviour
             return false;
         }
 
-        if (!IsFarEnoughFromCliffs(sampleUv, denseForestMinCliffDistance))
+        if (!IsInsideGuaranteedForestSector(worldPosition, forestZone))
         {
             return false;
         }
 
-        if (SampleHeight(sampleUv) > 0.05f)
+        if (!IsFarEnoughFromCliffs(sampleUv, 0.05f))
+        {
+            return false;
+        }
+
+        if (IsBlockedTerrainAt(sampleUv))
         {
             return false;
         }
@@ -1221,7 +1333,7 @@ public class MapMaskGenerator : MonoBehaviour
             return false;
         }
 
-        if (SampleHeight(sampleUv) > 0.05f)
+        if (IsBlockedTerrainAt(sampleUv))
         {
             return false;
         }
@@ -1261,7 +1373,7 @@ public class MapMaskGenerator : MonoBehaviour
         return transform.TransformPoint(localPosition);
     }
 
-    private Vector3 FindDenseForestCandidatePosition(Vector3 regionCenter, Queue<Vector3> frontier, bool allowNeighborGrowth)
+    private Vector3 FindGuaranteedForestCandidatePosition(GuaranteedForestZone forestZone, Queue<Vector3> frontier, bool allowNeighborGrowth)
     {
         if (allowNeighborGrowth && frontier != null && frontier.Count > 0 && _random.NextDouble() < 0.55d)
         {
@@ -1270,32 +1382,17 @@ public class MapMaskGenerator : MonoBehaviour
             return FindNeighborTreePosition(origin);
         }
 
-        float radius = Mathf.Max(1f, denseForestSpawnRadius);
-        float angle = (float)_random.NextDouble() * Mathf.PI * 2f;
-        float distance = Mathf.Sqrt((float)_random.NextDouble()) * radius;
-        Vector3 candidate = regionCenter + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * distance;
+        float halfAngle = Mathf.Clamp(guaranteedCityForestSpreadAngle, 5f, 180f) * 0.5f;
+        float randomAngle = UnityEngine.Random.Range(-halfAngle, halfAngle);
+        Vector3 direction = Quaternion.Euler(0f, randomAngle, 0f) * forestZone.outwardDirection;
+        float minDistance = Mathf.Max(0.1f, guaranteedCityForestMinDistanceFromCity);
+        float maxDistance = Mathf.Max(minDistance, guaranteedCityForestMaxDistanceFromCity);
+        float distance = Mathf.Lerp(minDistance, maxDistance, Mathf.Sqrt((float)_random.NextDouble()));
+        Vector3 candidate = forestZone.cityPosition + (direction.normalized * distance);
         Vector3 localPosition = transform.InverseTransformPoint(candidate);
         Vector2 sampleUv = WorldToUv(localPosition);
         candidate.y = transform.position.y + SampleHeight(sampleUv);
         return candidate;
-    }
-
-    private Vector3 GetDenseForestRegionCenter(List<Vector2Int> region)
-    {
-        Vector2 sum = Vector2.zero;
-        for (int i = 0; i < region.Count; i++)
-        {
-            sum += region[i];
-        }
-
-        Vector2 centroid = sum / Mathf.Max(1, region.Count);
-        float u = (centroid.x + 0.5f) / Mathf.Max(1, _maskWidth);
-        float v = (centroid.y + 0.5f) / Mathf.Max(1, _maskHeight);
-        Vector2 sampleUv = GetWarpedMaskUv(new Vector2(u, v));
-        float localX = (u - 0.5f) * GetEffectiveWorldWidth();
-        float localZ = (v - 0.5f) * GetEffectiveWorldDepth();
-        float localY = SampleHeight(sampleUv);
-        return transform.TransformPoint(new Vector3(localX, localY, localZ));
     }
 
     private Vector3 FindRandomDecorationCandidatePosition()
@@ -1603,6 +1700,22 @@ public class MapMaskGenerator : MonoBehaviour
         }
     }
 
+    private readonly struct GuaranteedForestZone
+    {
+        public readonly Vector3 cityPosition;
+        public readonly Vector3 outwardDirection;
+        public readonly Vector3 clearZoneCenter;
+        public readonly float clearZoneRadius;
+
+        public GuaranteedForestZone(Vector3 cityPosition, Vector3 outwardDirection, Vector3 clearZoneCenter, float clearZoneRadius)
+        {
+            this.cityPosition = cityPosition;
+            this.outwardDirection = outwardDirection;
+            this.clearZoneCenter = clearZoneCenter;
+            this.clearZoneRadius = clearZoneRadius;
+        }
+    }
+
     private void PlaceCityForTeam(TeamManager team, Vector3 targetPosition)
     {
         if (team == null)
@@ -1639,6 +1752,191 @@ public class MapMaskGenerator : MonoBehaviour
         }
 
         return positions;
+    }
+
+    private void AdjustBuildZonePositionsNearCities(List<Vector3> buildZoneWorldPositions, List<Vector3> cityWorldPositions)
+    {
+        if (buildZoneWorldPositions == null || buildZoneWorldPositions.Count == 0 || cityWorldPositions == null || cityWorldPositions.Count == 0)
+        {
+            return;
+        }
+
+        float minimumDistanceFromCity = Mathf.Max(0f, minBuildZoneDistanceFromCity);
+        float minimumDistanceFromOtherBuildZones = Mathf.Max(0f, minBuildZoneDistanceFromOtherBuildZones);
+        if (minimumDistanceFromCity <= 0f && minimumDistanceFromOtherBuildZones <= 0f)
+        {
+            return;
+        }
+
+        int iterationBudget = Mathf.Max(8, buildZoneWorldPositions.Count * 8);
+        for (int iteration = 0; iteration < iterationBudget; iteration++)
+        {
+            bool movedAny = false;
+            for (int i = 0; i < buildZoneWorldPositions.Count; i++)
+            {
+                Vector3 buildZonePosition = buildZoneWorldPositions[i];
+                Vector3 pushVector = Vector3.zero;
+
+                if (minimumDistanceFromCity > 0f)
+                {
+                    Vector3 nearestCityPosition = cityWorldPositions[0];
+                    float nearestSqrDistance = float.MaxValue;
+
+                    for (int cityIndex = 0; cityIndex < cityWorldPositions.Count; cityIndex++)
+                    {
+                        Vector3 deltaToCity = buildZonePosition - cityWorldPositions[cityIndex];
+                        deltaToCity.y = 0f;
+                        float sqrDistance = deltaToCity.sqrMagnitude;
+                        if (sqrDistance < nearestSqrDistance)
+                        {
+                            nearestSqrDistance = sqrDistance;
+                            nearestCityPosition = cityWorldPositions[cityIndex];
+                        }
+                    }
+
+                    float nearestDistance = Mathf.Sqrt(nearestSqrDistance);
+                    if (nearestDistance < minimumDistanceFromCity)
+                    {
+                        Vector3 pushDirection = buildZonePosition - nearestCityPosition;
+                        pushDirection.y = 0f;
+                        if (pushDirection.sqrMagnitude <= 0.0001f)
+                        {
+                            pushDirection = buildZonePosition.z >= nearestCityPosition.z ? Vector3.forward : Vector3.back;
+                        }
+
+                        float pushAmount = minimumDistanceFromCity - nearestDistance;
+                        pushVector += pushDirection.normalized * pushAmount;
+                    }
+                }
+
+                if (minimumDistanceFromOtherBuildZones > 0f)
+                {
+                    for (int otherIndex = 0; otherIndex < buildZoneWorldPositions.Count; otherIndex++)
+                    {
+                        if (otherIndex == i)
+                        {
+                            continue;
+                        }
+
+                        Vector3 deltaToOtherBuildZone = buildZonePosition - buildZoneWorldPositions[otherIndex];
+                        deltaToOtherBuildZone.y = 0f;
+                        float distanceToOtherBuildZone = deltaToOtherBuildZone.magnitude;
+                        if (distanceToOtherBuildZone >= minimumDistanceFromOtherBuildZones)
+                        {
+                            continue;
+                        }
+
+                        Vector3 pushDirection = deltaToOtherBuildZone.sqrMagnitude > 0.0001f
+                            ? deltaToOtherBuildZone.normalized
+                            : ((i & 1) == 0 ? Vector3.right : Vector3.left);
+                        float pushAmount = minimumDistanceFromOtherBuildZones - distanceToOtherBuildZone;
+                        pushVector += pushDirection * pushAmount;
+                    }
+                }
+
+                if (pushVector.sqrMagnitude <= 0.0001f)
+                {
+                    buildZoneWorldPositions[i] = FindNearestSafeBuildZonePosition(buildZonePosition);
+                    continue;
+                }
+
+                Vector3 adjustedPosition = FindNearestSafeBuildZonePosition(buildZonePosition + pushVector);
+                buildZoneWorldPositions[i] = adjustedPosition;
+                movedAny = true;
+            }
+
+            if (!movedAny)
+            {
+                break;
+            }
+        }
+    }
+
+    private void SnapBuildZoneHeightsToFinalTerrain(List<Vector3> buildZoneWorldPositions)
+    {
+        if (buildZoneWorldPositions == null || buildZoneWorldPositions.Count == 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < buildZoneWorldPositions.Count; i++)
+        {
+            Vector3 adjustedPosition = buildZoneWorldPositions[i];
+            Vector3 localPosition = transform.InverseTransformPoint(adjustedPosition);
+            Vector2 sampleUv = WorldToUv(localPosition);
+            adjustedPosition.y = transform.position.y + SampleHeight(sampleUv);
+            buildZoneWorldPositions[i] = adjustedPosition;
+        }
+    }
+
+    private Vector3 FindNearestSafeBuildZonePosition(Vector3 desiredPosition)
+    {
+        Vector3 bestPosition = desiredPosition;
+        if (IsBuildZonePlacementSafe(desiredPosition))
+        {
+            return SnapWorldPositionToTerrain(desiredPosition);
+        }
+
+        float searchStep = 0.5f;
+        float maxRadius = Mathf.Max(buildZoneCliffSafetyDistance + 6f, 12f);
+        for (float radius = searchStep; radius <= maxRadius; radius += searchStep)
+        {
+            int samples = Mathf.Max(8, Mathf.CeilToInt(radius * 10f));
+            for (int sampleIndex = 0; sampleIndex < samples; sampleIndex++)
+            {
+                float angle = (sampleIndex / (float)samples) * Mathf.PI * 2f;
+                Vector3 candidate = desiredPosition + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius;
+                if (!IsBuildZonePlacementSafe(candidate))
+                {
+                    continue;
+                }
+
+                return SnapWorldPositionToTerrain(candidate);
+            }
+        }
+
+        return SnapWorldPositionToTerrain(bestPosition);
+    }
+
+    private bool IsBuildZonePlacementSafe(Vector3 worldPosition)
+    {
+        Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
+        Vector2 sampleUv = WorldToUv(localPosition);
+        if (IsOutsideMaskBounds(sampleUv))
+        {
+            return false;
+        }
+
+        MaskRole role = GetRoleAtUv(sampleUv);
+        if (role == MaskRole.Black)
+        {
+            return false;
+        }
+
+        float requiredCliffDistance = Mathf.Max(0f, buildZoneCliffSafetyDistance);
+        if (requiredCliffDistance <= 0f)
+        {
+            return true;
+        }
+
+        int searchRadiusPixels = Mathf.CeilToInt(requiredCliffDistance * PixelsPerWorldUnitX()) + 3;
+        float distanceToBlack = FindDistanceToRole(sampleUv, MaskRole.Black, searchRadiusPixels);
+        if (distanceToBlack < 0f)
+        {
+            return true;
+        }
+
+        float distanceWorld = distanceToBlack / PixelsPerWorldUnitX();
+        return distanceWorld >= requiredCliffDistance;
+    }
+
+    private Vector3 SnapWorldPositionToTerrain(Vector3 worldPosition)
+    {
+        Vector3 adjustedPosition = worldPosition;
+        Vector3 localPosition = transform.InverseTransformPoint(adjustedPosition);
+        Vector2 sampleUv = WorldToUv(localPosition);
+        adjustedPosition.y = transform.position.y + SampleHeight(sampleUv);
+        return adjustedPosition;
     }
 
     private Vector3 PixelToWorld(Vector2 pixel)
@@ -1771,36 +2069,7 @@ public class MapMaskGenerator : MonoBehaviour
 
     private float SampleHeight(Vector2 uv)
     {
-        if (IsOuterBlackBand(uv))
-        {
-            float noise = (Mathf.PerlinNoise((uv.x * 11f) + seed, (uv.y * 11f) + 3f) - 0.5f) * plateauNoiseHeight;
-            return plateauHeight + noise;
-        }
-
-        MaskRole role = GetRoleAtUv(uv);
-        if (role == MaskRole.Black)
-        {
-            float noise = (Mathf.PerlinNoise((uv.x * 11f) + seed, (uv.y * 11f) + 3f) - 0.5f) * plateauNoiseHeight;
-            return plateauHeight + noise;
-        }
-
-        int slopeRadiusPixels = Mathf.Max(2, Mathf.CeilToInt(slopeWidth * PixelsPerWorldUnitX()));
-        float distanceToBlack = FindDistanceToRole(uv, MaskRole.Black, slopeRadiusPixels);
-        if (distanceToBlack < 0f)
-        {
-            return 0f;
-        }
-
-        float slopeNoise = (Mathf.PerlinNoise((uv.x * 8.1f) + seed, (uv.y * 8.1f) + 19f) - 0.5f) * slopeNoiseStrength;
-        float localSlopeWidth = Mathf.Max(0.45f, slopeWidth + slopeNoise);
-        float distanceWorld = distanceToBlack / PixelsPerWorldUnitX();
-        if (distanceWorld >= localSlopeWidth)
-        {
-            return 0f;
-        }
-
-        float t = Mathf.Clamp01(distanceWorld / Mathf.Max(0.01f, localSlopeWidth));
-        return Mathf.SmoothStep(plateauHeight, 0f, t);
+        return SampleTerrainHeight(uv, Mathf.Clamp01(visualCliffHeightMultiplier));
     }
 
     private bool IsOuterBlackBand(Vector2 uv)
@@ -1877,8 +2146,168 @@ public class MapMaskGenerator : MonoBehaviour
         return Mathf.Max(1f, worldDepth * Mathf.Max(0.1f, mapSizeMultiplier));
     }
 
+    private Vector2 GetTerrainMaskUvFromExpandedSurface(float u, float v)
+    {
+        float effectiveWorldWidth = GetEffectiveWorldWidth();
+        float effectiveWorldDepth = GetEffectiveWorldDepth();
+        float expandedWorldWidth = effectiveWorldWidth + (Mathf.Max(0f, terrainMeshExtensionWorld) * 2f);
+        float expandedWorldDepth = effectiveWorldDepth + (Mathf.Max(0f, terrainMeshExtensionWorld) * 2f);
+        float localX = (u - 0.5f) * expandedWorldWidth;
+        float localZ = (v - 0.5f) * expandedWorldDepth;
+        Vector2 baseUv = new Vector2(
+            (localX / Mathf.Max(0.01f, effectiveWorldWidth)) + 0.5f,
+            (localZ / Mathf.Max(0.01f, effectiveWorldDepth)) + 0.5f);
+        return GetWarpedMaskUv(baseUv, false);
+    }
+
+    private bool IsOutsideMaskBounds(Vector2 uv)
+    {
+        return uv.x < 0f || uv.x > 1f || uv.y < 0f || uv.y > 1f;
+    }
+
+    private float SampleTerrainHeight(Vector2 uv, float heightMultiplier)
+    {
+        if (IsOutsideMaskBounds(uv))
+        {
+            float noise = (Mathf.PerlinNoise((uv.x * 11f) + seed, (uv.y * 11f) + 3f) - 0.5f) * plateauNoiseHeight;
+            return (plateauHeight + noise) * Mathf.Max(0f, heightMultiplier);
+        }
+
+        if (IsInsideGuaranteedForestClearZone(uv))
+        {
+            return 0f;
+        }
+
+        if (IsInsideBuildZoneCliffSafetyZone(uv))
+        {
+            return 0f;
+        }
+
+        if (IsOuterBlackBand(uv))
+        {
+            float noise = (Mathf.PerlinNoise((uv.x * 11f) + seed, (uv.y * 11f) + 3f) - 0.5f) * plateauNoiseHeight;
+            return (plateauHeight + noise) * Mathf.Max(0f, heightMultiplier);
+        }
+
+        MaskRole role = GetRoleAtUv(uv);
+        if (role == MaskRole.Black)
+        {
+            float noise = (Mathf.PerlinNoise((uv.x * 11f) + seed, (uv.y * 11f) + 3f) - 0.5f) * plateauNoiseHeight;
+            return (plateauHeight + noise) * Mathf.Max(0f, heightMultiplier);
+        }
+
+        int slopeRadiusPixels = Mathf.Max(2, Mathf.CeilToInt(slopeWidth * PixelsPerWorldUnitX()));
+        float distanceToBlack = FindDistanceToRole(uv, MaskRole.Black, slopeRadiusPixels);
+        if (distanceToBlack < 0f)
+        {
+            return 0f;
+        }
+
+        float slopeNoise = (Mathf.PerlinNoise((uv.x * 8.1f) + seed, (uv.y * 8.1f) + 19f) - 0.5f) * slopeNoiseStrength;
+        float localSlopeWidth = Mathf.Max(0.45f, slopeWidth + slopeNoise);
+        float distanceWorld = distanceToBlack / PixelsPerWorldUnitX();
+        if (distanceWorld >= localSlopeWidth)
+        {
+            return 0f;
+        }
+
+        float t = Mathf.Clamp01(distanceWorld / Mathf.Max(0.01f, localSlopeWidth));
+        return Mathf.SmoothStep(plateauHeight, 0f, t) * Mathf.Max(0f, heightMultiplier);
+    }
+
+    private bool IsBlockedTerrainAt(Vector2 uv)
+    {
+        return SampleTerrainHeight(uv, 1f) > 0.05f;
+    }
+
+    private bool IsInsideGuaranteedForestClearZone(Vector2 uv)
+    {
+        if (_guaranteedForestZones == null || _guaranteedForestZones.Count == 0)
+        {
+            return false;
+        }
+
+        Vector3 worldPosition = transform.TransformPoint(UvToLocalPosition(uv));
+        worldPosition.y = 0f;
+        for (int i = 0; i < _guaranteedForestZones.Count; i++)
+        {
+            Vector3 clearZoneCenter = _guaranteedForestZones[i].clearZoneCenter;
+            clearZoneCenter.y = 0f;
+            float clearZoneRadius = _guaranteedForestZones[i].clearZoneRadius;
+            if ((worldPosition - clearZoneCenter).sqrMagnitude <= clearZoneRadius * clearZoneRadius)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsInsideGuaranteedForestSector(Vector3 worldPosition, GuaranteedForestZone forestZone)
+    {
+        Vector3 flatDelta = worldPosition - forestZone.cityPosition;
+        flatDelta.y = 0f;
+        float distance = flatDelta.magnitude;
+        float minDistance = Mathf.Max(0f, guaranteedCityForestMinDistanceFromCity);
+        float maxDistance = Mathf.Max(minDistance, guaranteedCityForestMaxDistanceFromCity);
+        if (distance < minDistance || distance > maxDistance)
+        {
+            return false;
+        }
+
+        if (flatDelta.sqrMagnitude <= 0.0001f)
+        {
+            return false;
+        }
+
+        float angle = Vector3.Angle(forestZone.outwardDirection, flatDelta.normalized);
+        return angle <= Mathf.Clamp(guaranteedCityForestSpreadAngle, 5f, 180f) * 0.5f;
+    }
+
+    private bool IsInsideBuildZoneCliffSafetyZone(Vector2 uv)
+    {
+        if (_adjustedBuildZonePositions == null || _adjustedBuildZonePositions.Count == 0)
+        {
+            return false;
+        }
+
+        float safetyDistance = Mathf.Max(0f, buildZoneCliffSafetyDistance);
+        if (safetyDistance <= 0f)
+        {
+            return false;
+        }
+
+        Vector3 worldPosition = transform.TransformPoint(UvToLocalPosition(uv));
+        worldPosition.y = 0f;
+        float sqrSafetyDistance = safetyDistance * safetyDistance;
+        for (int i = 0; i < _adjustedBuildZonePositions.Count; i++)
+        {
+            Vector3 buildZonePosition = _adjustedBuildZonePositions[i];
+            buildZonePosition.y = 0f;
+            if ((worldPosition - buildZonePosition).sqrMagnitude <= sqrSafetyDistance)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Vector3 UvToLocalPosition(Vector2 uv)
+    {
+        return new Vector3(
+            (uv.x - 0.5f) * GetEffectiveWorldWidth(),
+            0f,
+            (uv.y - 0.5f) * GetEffectiveWorldDepth());
+    }
+
     private MaskRole GetRoleAtUv(Vector2 uv)
     {
+        if (IsOutsideMaskBounds(uv))
+        {
+            return MaskRole.Black;
+        }
+
         int x = Mathf.RoundToInt(Mathf.Clamp01(uv.x) * (_maskWidth - 1));
         int y = Mathf.RoundToInt(Mathf.Clamp01(uv.y) * (_maskHeight - 1));
         return GetRole(x, y);
@@ -1904,6 +2333,11 @@ public class MapMaskGenerator : MonoBehaviour
 
     private Vector2 GetWarpedMaskUv(Vector2 uv)
     {
+        return GetWarpedMaskUv(uv, true);
+    }
+
+    private Vector2 GetWarpedMaskUv(Vector2 uv, bool clampResult)
+    {
         Vector2 orientedUv = TransformUv(uv);
         float primaryX = Mathf.PerlinNoise(
             orientedUv.x * maskWarpScale + seed,
@@ -1922,8 +2356,11 @@ public class MapMaskGenerator : MonoBehaviour
         Vector2 warpedUv = orientedUv;
         warpedUv.x += ((primaryX - 0.5f) * 2f * maskWarpStrength) + ((secondaryX - 0.5f) * 2f * secondaryWarpStrength);
         warpedUv.y += ((primaryY - 0.5f) * 2f * maskWarpStrength) + ((secondaryY - 0.5f) * 2f * secondaryWarpStrength);
-        warpedUv.x = Mathf.Clamp01(warpedUv.x);
-        warpedUv.y = Mathf.Clamp01(warpedUv.y);
+        if (clampResult)
+        {
+            warpedUv.x = Mathf.Clamp01(warpedUv.x);
+            warpedUv.y = Mathf.Clamp01(warpedUv.y);
+        }
         return warpedUv;
     }
 
@@ -2031,6 +2468,71 @@ public class MapMaskGenerator : MonoBehaviour
         }
 
         return brightness <= 0.5f ? MaskRole.Black : MaskRole.White;
+    }
+
+    private List<GuaranteedForestZone> CreateGuaranteedForestZones(List<Vector3> cityWorldPositions)
+    {
+        List<GuaranteedForestZone> zones = new List<GuaranteedForestZone>();
+        if (cityWorldPositions == null || cityWorldPositions.Count == 0)
+        {
+            return zones;
+        }
+
+        List<Vector3> orderedCities = new List<Vector3>(cityWorldPositions);
+        orderedCities.Sort((a, b) => a.z.CompareTo(b.z));
+
+        zones.Add(CreateGuaranteedForestZone(orderedCities[0], Vector3.back));
+        if (orderedCities.Count > 1)
+        {
+            zones.Add(CreateGuaranteedForestZone(orderedCities[orderedCities.Count - 1], Vector3.forward));
+        }
+
+        return zones;
+    }
+
+    private GuaranteedForestZone CreateGuaranteedForestZone(Vector3 cityPosition, Vector3 outwardDirection)
+    {
+        Vector3 normalizedDirection = outwardDirection.sqrMagnitude > 0.0001f ? outwardDirection.normalized : Vector3.forward;
+        float minDistance = Mathf.Max(0f, guaranteedCityForestMinDistanceFromCity);
+        float maxDistance = Mathf.Max(minDistance, guaranteedCityForestMaxDistanceFromCity);
+        Vector3 clearZoneCenter = cityPosition + (normalizedDirection * ((minDistance + maxDistance) * 0.5f));
+        return new GuaranteedForestZone(
+            cityPosition,
+            normalizedDirection,
+            clearZoneCenter,
+            Mathf.Max(0.5f, guaranteedCityForestCliffClearRadius));
+    }
+
+    private void EnsureRockObstacle(GameObject rockInstance)
+    {
+        if (rockInstance == null)
+        {
+            return;
+        }
+
+        Collider existingCollider = rockInstance.GetComponentInChildren<Collider>();
+        if (existingCollider != null)
+        {
+            existingCollider.isTrigger = false;
+            return;
+        }
+
+        Renderer[] renderers = rockInstance.GetComponentsInChildren<Renderer>();
+        if (renderers == null || renderers.Length == 0)
+        {
+            return;
+        }
+
+        Bounds combinedBounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            combinedBounds.Encapsulate(renderers[i].bounds);
+        }
+
+        SphereCollider collider = rockInstance.AddComponent<SphereCollider>();
+        collider.center = rockInstance.transform.InverseTransformPoint(combinedBounds.center);
+        collider.radius = Mathf.Max(0.2f, Mathf.Max(combinedBounds.size.x, combinedBounds.size.z) * 0.22f);
+        collider.isTrigger = false;
     }
 
     private void TryResolveBestRole(float candidateDistance, MaskRole role, ref float bestDistance, ref MaskRole bestRole)

@@ -1,0 +1,32 @@
+RTSLords Runtime Performance Report
+Generated: 2026-05-27 11:25:56
+Session duration: 17.28s
+Frames captured: 7648
+
+Frame timing
+Average frame: 2.90 ms (344.5 FPS)
+Worst frame: 4940.04 ms (0.2 FPS)
+Best frame: 1.46 ms (683.4 FPS)
+Spike threshold: 25.00 ms
+
+Memory
+Allocated start/end/max: 1089.58 MB / 1049.69 MB / 1089.58 MB
+Reserved start/end/max: 1593.90 MB / 1521.30 MB / 1593.90 MB
+Mono start/end/max: 40.08 MB / 41.60 MB / 43.70 MB
+
+GC collections
+Gen0: 35
+Gen1: 35
+Gen2: 35
+
+Final world counts
+Units: 16
+Builds: 2
+Trees: 300
+Teams: 2
+
+Worst spikes
+1. t=0.02s | 4940.04 ms | alloc=1080.00 MB | reserved=1586.23 MB | mono=40.08 MB | units=14 | builds=2 | trees=300
+2. t=0.22s | 216.89 ms | alloc=1088.04 MB | reserved=1591.94 MB | mono=41.03 MB | units=14 | builds=2 | trees=300
+3. t=0.25s | 26.36 ms | alloc=1087.97 MB | reserved=1591.88 MB | mono=41.07 MB | units=14 | builds=2 | trees=300
+4. t=17.26s | 26.23 ms | alloc=1049.65 MB | reserved=1553.30 MB | mono=41.55 MB | units=16 | builds=2 | trees=300

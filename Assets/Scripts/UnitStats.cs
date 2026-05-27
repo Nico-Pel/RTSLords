@@ -61,6 +61,12 @@ public class UnitStats : ScriptableObject
     public int damages = 3;
     public float attackCooldown = 1.1f;
     public bool faceTargetOnAttack = true;
+    public bool canFocusEnemyPeasants = true;
+    public bool isSupportHealer = false;
+    public int supportHealOutOfCombat = 2;
+    public int supportHealInCombat = 1;
+    public float supportHealCooldown = 1.5f;
+    public float supportCombatGraceDuration = 3f;
     public float attackMoveStopDistance = 0.9f;
     public float aggroRange = 8f;
     public float detectionRaidRange = 15f;

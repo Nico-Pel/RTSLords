@@ -242,6 +242,21 @@ public class PlayerActivator : GameBehaviour
         TryPromoteReplacementActivator(unit);
     }
 
+    public static PlayerActivator GetActiveActivatorFor(Unit unit)
+    {
+        if (unit == null)
+        {
+            return null;
+        }
+
+        if (ActiveActivatorByUnit.TryGetValue(unit, out PlayerActivator activator))
+        {
+            return activator;
+        }
+
+        return null;
+    }
+
     private void TryActivateFromCollider(Collider other, bool fromStay = false)
     {
         if (other == null || !other.CompareTag("Player"))
